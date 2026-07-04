@@ -74,21 +74,11 @@ func TestPromptsCarryTheirContracts(t *testing.T) {
 	p, feat := testProgram()
 	o := Options{Csdd: gate.Resolver{"npx", "-y", "@protonspy/csdd"}}
 
-	// csdd's order is design → requirements → tasks, so `spec init` lives in the
-	// FIRST (design) phase, not requirements.
-	design := authorPrompt(o, p, feat, "design", "", graphToolsHint)
-	for _, want := range []string{
-		"npx -y @protonspy/csdd spec init tile-map",
-		"--artifact design",
-		"specs/tile-map/design.md",
-	} {
-		if !strings.Contains(design, want) {
-			t.Errorf("authorPrompt(design) missing %q", want)
-		}
-	}
-
+	// csdd's order is requirements → design → tasks, so `spec init` lives in the
+	// FIRST (requirements) phase.
 	author := authorPrompt(o, p, feat, "requirements", "fix the acceptance criteria", graphToolsHint)
 	for _, want := range []string{
+		"npx -y @protonspy/csdd spec init tile-map",
 		"--artifact requirements",
 		"specs/tile-map/requirements.md",
 		"EARS",
@@ -98,6 +88,13 @@ func TestPromptsCarryTheirContracts(t *testing.T) {
 	} {
 		if !strings.Contains(author, want) {
 			t.Errorf("authorPrompt(requirements) missing %q", want)
+		}
+	}
+
+	design := authorPrompt(o, p, feat, "design", "", graphToolsHint)
+	for _, want := range []string{"--artifact design", "specs/tile-map/design.md"} {
+		if !strings.Contains(design, want) {
+			t.Errorf("authorPrompt(design) missing %q", want)
 		}
 	}
 	tasks := authorPrompt(o, p, feat, "tasks", "", graphToolsHint)

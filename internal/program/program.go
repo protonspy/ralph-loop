@@ -184,10 +184,11 @@ arrives in the iteration's prompt.
 
 ## csdd — the SDD contract authority
 Invoke csdd exactly as: ` + "`<CSDD>`" + `.
-Author each feature's contract in csdd's MANDATORY order — **design → requirements →
-tasks** (out of order breaks csdd's gates). Per feature ` + "`<feat>`" + `:
-- ` + "`<CSDD> spec init <feat>`" + `                                 scaffold the spec (once, in design)
-- ` + "`<CSDD> spec generate <feat> --artifact design|requirements|tasks`" + `   emit the template
+Author each feature's contract in csdd's MANDATORY order — **requirements → design
+→ tasks** (each phase must be APPROVED before the next is generated, or the gate
+fails). Per feature ` + "`<feat>`" + `:
+- ` + "`<CSDD> spec init <feat>`" + `                                 scaffold the spec (once, in requirements)
+- ` + "`<CSDD> spec generate <feat> --artifact requirements|design|tasks`" + `   emit the template
 - ` + "`<CSDD> spec validate <feat> --root .`" + `                   must exit 0 before approval
 - ` + "`<CSDD> spec approve <feat> --phase <phase>`" + `             gates the phase
 Requirements are EARS-form with observable acceptance criteria; tasks are small
