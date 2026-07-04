@@ -138,13 +138,13 @@ type researchOutput struct {
 // into our graph KB, so requirements are grounded, not guessed. The caller
 // treats failure as soft — an unresearched spec is worse, not impossible.
 func phaseResearch(ctx context.Context, o Options, p *program.PRD, feat *program.Feat) error {
-	cfg, err := writeMCPConfig(o.Root)
+	cfg, err := writeMCPConfig(o.Root, o.CsddMCP)
 	if err != nil {
 		return err
 	}
 	agent := pickAgent(p.Team, "research", "analyst", "scout")
 	var out researchOutput
-	if err := brainJSON(ctx, o, researchPrompt(p, feat, mcpGuidance(o.Root)), &out, brainArgs(cfg, agent)...); err != nil {
+	if err := brainJSON(ctx, o, researchPrompt(p, feat, mcpGuidance(o.Root, o.CsddMCP)), &out, brainArgs(cfg, agent)...); err != nil {
 		return err
 	}
 	return program.AppendProgress(o.Root, feat.ID+" — research",
@@ -199,12 +199,12 @@ var csddPhases = []string{"requirements", "design", "tasks"}
 func phaseSpecUp(ctx context.Context, o Options, p *program.PRD, feat *program.Feat) error {
 	logf := func(format string, a ...any) { fmt.Fprintf(o.Out, format+"\n", a...) }
 	retries := max(o.MaxRetry, 1)
-	cfg, err := writeMCPConfig(o.Root)
+	cfg, err := writeMCPConfig(o.Root, o.CsddMCP)
 	if err != nil {
 		return err
 	}
 	lead := pickAgent(p.Team, "lead", "architect", "tech", "planner")
-	guidance := mcpGuidance(o.Root)
+	guidance := mcpGuidance(o.Root, o.CsddMCP)
 
 	for _, phase := range csddPhases {
 		feedback := ""
@@ -302,13 +302,13 @@ type reviewVerdict struct {
 // sibling feats, the knowledge graph — not just mechanical validity. csdd's
 // mechanical gate runs separately on approve.
 func reviewSpec(ctx context.Context, o Options, p *program.PRD, feat *program.Feat, phase string) (reviewVerdict, error) {
-	cfg, err := writeMCPConfig(o.Root)
+	cfg, err := writeMCPConfig(o.Root, o.CsddMCP)
 	if err != nil {
 		return reviewVerdict{}, err
 	}
 	agent := pickAgent(p.Team, "review", "critic", "qa")
 	var v reviewVerdict
-	if err := brainJSON(ctx, o, reviewPrompt(p, feat, phase, mcpGuidance(o.Root)), &v, brainArgs(cfg, agent)...); err != nil {
+	if err := brainJSON(ctx, o, reviewPrompt(p, feat, phase, mcpGuidance(o.Root, o.CsddMCP)), &v, brainArgs(cfg, agent)...); err != nil {
 		return reviewVerdict{}, err
 	}
 	if !v.Approve && len(v.Reasons) == 0 {
@@ -383,7 +383,7 @@ type e2eVerdict struct {
 // driving the real app via Bash) against the acceptance criteria and judge
 // pass/fail. Only a pass flips the feat to done.
 func phaseE2E(ctx context.Context, o Options, p *program.PRD, feat *program.Feat) error {
-	cfg, err := writeMCPConfig(o.Root)
+	cfg, err := writeMCPConfig(o.Root, o.CsddMCP)
 	if err != nil {
 		return err
 	}

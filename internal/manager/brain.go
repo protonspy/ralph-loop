@@ -19,23 +19,26 @@ import (
 // MCP wiring (which organs a given activation gets) and the JSON activation
 // helper every brain phase goes through.
 
-// writeMCPConfig materializes an --mcp-config file under .ralph/ wiring the graph
-// KB — ralph-loop's OWN native MCP (served by this same rl binary over stdio),
-// which needs no external setup. The graph is the ONLY MCP ralph wires; anything
-// carrying its own setup cost (Context7's token, Playwright's browser deps) is
-// deliberately left out.
-func writeMCPConfig(root string) (string, error) {
+// writeMCPConfig materializes an --mcp-config file under .ralph/ wiring the two
+// MCPs the brain gets: (1) the graph — ralph-loop's OWN native KB (this rl binary
+// over stdio), and (2) csdd — its SDD-contract tools, when csddMCP is set (the
+// launch command, e.g. "npx -y @protonspy/csdd-mcp"). Both are stdio; anything
+// carrying its own setup cost (Context7 token, Playwright deps) is left to the
+// user's .mcp.json. Entries use Claude Code's shape: {type:"stdio", command, args}.
+func writeMCPConfig(root, csddMCP string) (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("locate rl binary for graph MCP: %w", err)
 	}
-	// Claude Code's MCP config shape for a stdio server: {type, command, args}.
 	servers := map[string]any{
 		"graph": map[string]any{
 			"type":    "stdio",
 			"command": exe,
 			"args":    []string{"graph", "mcp", "--root", root},
 		},
+	}
+	if f := strings.Fields(csddMCP); len(f) > 0 {
+		servers["csdd"] = map[string]any{"type": "stdio", "command": f[0], "args": f[1:]}
 	}
 	raw, err := json.MarshalIndent(map[string]any{"mcpServers": servers}, "", "  ")
 	if err != nil {
@@ -56,8 +59,11 @@ func writeMCPConfig(root string) (string, error) {
 // in .mcp.json. ralph only VALIDATES presence here — it never installs MCPs
 // (that is the user's job via `csdd mcp add`/`enable`), and the prompt mentions
 // only what is actually available.
-func mcpGuidance(root string) string {
+func mcpGuidance(root, csddMCP string) string {
 	hints := []string{graphToolsHint}
+	if strings.TrimSpace(csddMCP) != "" {
+		hints = append(hints, csddMCPHint)
+	}
 	if mcpConfigured(root, "context7") {
 		hints = append(hints, context7Hint)
 	}
@@ -151,6 +157,13 @@ const graphToolsHint = `KNOWLEDGE GRAPH (MCP server "graph" — the project's li
 const context7Hint = `LIBRARY DOCS (MCP server "context7" — the user configured it in .mcp.json):
   - Fetch authoritative, version-correct library/API documentation via context7
     before relying on an API, instead of guessing from memory.`
+
+// csddMCPHint is added when the csdd MCP is wired for the brain.
+const csddMCPHint = `SDD CONTRACT (MCP server "csdd" — csdd's own tools):
+  - Drive the csdd contract through its tools (csdd_spec_generate / validate /
+    status / test_report / diff_report, …; pass root=".") rather than shelling
+    out — it is more precise. NOTE: ralph's build gate still runs csdd itself
+    deterministically; these tools are for the agents' own SDD work.`
 
 // projectGraph refreshes the living documentation graph from the program state.
 // Best-effort by design: the graph is documentation, not a gate.

@@ -25,7 +25,7 @@ func testProgram() (*program.PRD, *program.Feat) {
 
 func TestWriteMCPConfig(t *testing.T) {
 	root := t.TempDir()
-	path, err := writeMCPConfig(root)
+	path, err := writeMCPConfig(root, "npx -y @protonspy/csdd-mcp")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,9 +43,9 @@ func TestWriteMCPConfig(t *testing.T) {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		t.Fatalf("config is not valid JSON: %v\n%s", err, raw)
 	}
-	// The graph is the ONLY MCP ralph wires — no playwright, no context7.
-	if len(cfg.MCPServers) != 1 {
-		t.Fatalf("want exactly the graph server, got %v", cfg.MCPServers)
+	// Two MCPs: the native graph plus csdd (no playwright, no context7).
+	if len(cfg.MCPServers) != 2 {
+		t.Fatalf("want graph + csdd servers, got %v", cfg.MCPServers)
 	}
 	g, ok := cfg.MCPServers["graph"]
 	if !ok {
@@ -57,6 +57,24 @@ func TestWriteMCPConfig(t *testing.T) {
 	}
 	if len(g.Args) != 4 || g.Args[0] != "graph" || g.Args[1] != "mcp" || g.Args[3] != root {
 		t.Errorf("graph server args = %v", g.Args)
+	}
+	c, ok := cfg.MCPServers["csdd"]
+	if !ok || c.Type != "stdio" || c.Command != "npx" {
+		t.Errorf("csdd server = %+v, want stdio npx", c)
+	}
+
+	// Empty csddMCP → graph only.
+	path2, _ := writeMCPConfig(root, "")
+	raw2, _ := os.ReadFile(path2)
+	var cfg2 struct {
+		MCPServers map[string]json.RawMessage `json:"mcpServers"`
+	}
+	_ = json.Unmarshal(raw2, &cfg2)
+	if _, ok := cfg2.MCPServers["csdd"]; ok {
+		t.Error("csdd server must be absent when csddMCP is empty")
+	}
+	if len(cfg2.MCPServers) != 1 {
+		t.Errorf("empty csddMCP → graph only, got %d servers", len(cfg2.MCPServers))
 	}
 }
 
@@ -125,13 +143,21 @@ func TestPromptsCarryTheirContracts(t *testing.T) {
 func TestMCPGuidanceValidatesContext7(t *testing.T) {
 	root := t.TempDir()
 
-	// No .mcp.json → graph only, no context7 mention.
-	g := mcpGuidance(root)
+	// No .mcp.json, no csdd MCP → graph only.
+	g := mcpGuidance(root, "")
 	if !strings.Contains(g, "graph") {
 		t.Error("guidance should always describe the native graph MCP")
 	}
 	if strings.Contains(g, "context7") {
 		t.Errorf("context7 must not be mentioned when absent from .mcp.json:\n%s", g)
+	}
+	if strings.Contains(g, `server "csdd"`) {
+		t.Errorf("csdd must not be mentioned when its MCP is disabled:\n%s", g)
+	}
+
+	// csdd MCP wired → described.
+	if g := mcpGuidance(root, "npx -y @protonspy/csdd-mcp"); !strings.Contains(g, `server "csdd"`) {
+		t.Errorf("guidance should describe the csdd MCP when wired:\n%s", g)
 	}
 
 	// User configured context7 in .mcp.json → it is validated in and described.
@@ -142,7 +168,7 @@ func TestMCPGuidanceValidatesContext7(t *testing.T) {
 	if !mcpConfigured(root, "context7") {
 		t.Fatal("mcpConfigured should detect context7 in .mcp.json")
 	}
-	if g := mcpGuidance(root); !strings.Contains(g, "context7") {
+	if g := mcpGuidance(root, ""); !strings.Contains(g, "context7") {
 		t.Errorf("guidance should describe context7 once configured:\n%s", g)
 	}
 }
