@@ -39,7 +39,6 @@ type PRD struct {
 	Program   string   `json:"program"`
 	Challenge string   `json:"challenge"`
 	PRDPath   string   `json:"prd,omitempty"`  // path to the full PRD markdown, once written
-	Branch    string   `json:"branch"`
 	Team      []string `json:"team,omitempty"` // staffed agent slugs (⓪), activated via --agent in later phases
 	Feats     []*Feat  `json:"feats"`
 }
@@ -99,7 +98,6 @@ func Bootstrap(root, challenge string) (*PRD, error) {
 	p := &PRD{
 		Program:   slug,
 		Challenge: challenge,
-		Branch:    "ralph/" + slug,
 		Feats:     []*Feat{},
 	}
 	if err := Save(root, p); err != nil {

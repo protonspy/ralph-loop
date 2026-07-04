@@ -429,7 +429,7 @@ Respond with ONLY this JSON, no prose, no code fences:
 func printPlan(o Options, logf func(string, ...any)) error {
 	slug := program.Slug(o.Challenge)
 	logf("plan for: %q", o.Challenge)
-	logf("  program: %s   branch: ralph/%s   state: .ralph/prd.json + .ralph/progress.md", slug, slug)
+	logf("  program: %s   state: .ralph/prd.json + .ralph/progress.md (branch/PR/merge: csdd)", slug)
 	logf("")
 	logf("FRONT (once):")
 	logf("  ⓪ init       ralph scaffolds .claude/ + CLAUDE.md (NOT csdd init)")

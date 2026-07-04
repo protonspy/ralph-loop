@@ -51,17 +51,13 @@ func Run(ctx context.Context, o Options) error {
 	if err != nil {
 		return fmt.Errorf("bootstrap program: %w", err)
 	}
-	logf("program %q on branch %s", p.Program, p.Branch)
+	logf("program %q", p.Program)
 
-	// Isolate the program's autonomous work on its own branch so every commit
-	// (spec-up, build) lands there rather than on the base branch.
-	if err := gitx.EnsureBranch(ctx, o.Root, p.Branch); err != nil {
-		logf("   ⚠ could not check out %s (commits will land on the current branch): %v", p.Branch, err)
-	}
-
-	// Note: ralph-loop does NOT run `csdd init`. The workspace is scaffolded by
+	// ralph-loop does NOT define git branches — branch, PR and merge are csdd's
+	// responsibility. We stay on whatever branch csdd/the user set up and let the
+	// pipeline's commits land there. The workspace is scaffolded by
 	// program.Bootstrap (a .claude/ anchor + a self-contained CLAUDE.md); the team
-	// itself is pulled in via `csdd copy` during staffing below.
+	// is pulled in via `csdd copy` during staffing below.
 
 	// Front of the pipeline: staff a team, then decompose the PRD into feats.
 	if len(p.Feats) == 0 {

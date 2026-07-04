@@ -1,6 +1,7 @@
 package program
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -25,11 +26,15 @@ func TestBootstrapAndReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Branch != "ralph/fazer-um-jogo-estilo-wow" {
-		t.Fatalf("branch = %q", p.Branch)
+	if p.Program != "fazer-um-jogo-estilo-wow" {
+		t.Fatalf("program = %q", p.Program)
 	}
 	if !Exists(root) {
 		t.Fatal("Exists should be true after Bootstrap")
+	}
+	// ralph-loop must NOT scaffold a git branch — that's csdd's job.
+	if _, err := os.Stat(filepath.Join(root, ".claude")); err != nil {
+		t.Errorf(".claude anchor should be scaffolded: %v", err)
 	}
 	// bootstrap is idempotent
 	p2, err := Bootstrap(root, "different challenge")
