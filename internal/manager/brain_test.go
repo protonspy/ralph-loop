@@ -26,7 +26,7 @@ func testProgram() (*program.PRD, *program.Feat) {
 func TestWriteMCPConfig(t *testing.T) {
 	root := t.TempDir()
 	for _, playwright := range []bool{false, true} {
-		path, err := writeMCPConfig(root, playwright)
+		path, err := writeMCPConfig(root, playwright, "")
 		if err != nil {
 			t.Fatal(err)
 		}

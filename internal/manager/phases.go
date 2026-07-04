@@ -66,6 +66,7 @@ func phaseStaff(ctx context.Context, o Options, p *program.PRD) error {
 			return fmt.Errorf("csdd agent create %s failed (exit %d):\n%s", name, res.ExitCode, res.Output)
 		}
 		created = append(created, "agent:"+name)
+		p.Team = append(p.Team, name) // remembered so later phases can --agent it
 	}
 	for _, s := range roster.Skills {
 		name := program.Slug(s.Name)
@@ -121,7 +122,6 @@ func phaseDecompose(ctx context.Context, o Options, p *program.PRD) error {
 	if len(out.Feats) == 0 {
 		return fmt.Errorf("decompose returned no feats")
 	}
-	p.PRDPath = "" // full PRD doc authored later; keep the summary in progress
 	seen := map[string]bool{}
 	for _, f := range out.Feats {
 		id := program.Slug(f.ID)
@@ -136,6 +136,9 @@ func phaseDecompose(ctx context.Context, o Options, p *program.PRD) error {
 			Depends: slugAll(f.Depends),
 			Status:  program.StatusPlanned,
 		})
+	}
+	if rel, err := program.WritePRDDoc(o.Root, p, out.PRDSummary); err == nil {
+		p.PRDPath = rel
 	}
 	_ = program.AppendProgress(o.Root, "decomposition", out.PRDSummary)
 	return nil
@@ -184,12 +187,13 @@ type researchOutput struct {
 // into our graph KB, so requirements are grounded, not guessed. The caller
 // treats failure as soft — an unresearched spec is worse, not impossible.
 func phaseResearch(ctx context.Context, o Options, p *program.PRD, feat *program.Feat) error {
-	cfg, err := writeMCPConfig(o.Root, false)
+	cfg, err := writeMCPConfig(o.Root, false, o.Context7)
 	if err != nil {
 		return err
 	}
+	agent := pickAgent(p.Team, "research", "analyst", "scout")
 	var out researchOutput
-	if err := brainJSON(ctx, o, researchPrompt(p, feat), &out, "--mcp-config", cfg); err != nil {
+	if err := brainJSON(ctx, o, researchPrompt(p, feat), &out, brainArgs(cfg, agent)...); err != nil {
 		return err
 	}
 	return program.AppendProgress(o.Root, feat.ID+" — research",
@@ -242,13 +246,18 @@ var csddPhases = []string{"requirements", "design", "tasks"}
 func phaseSpecUp(ctx context.Context, o Options, p *program.PRD, feat *program.Feat) error {
 	logf := func(format string, a ...any) { fmt.Fprintf(o.Out, format+"\n", a...) }
 	retries := max(o.MaxRetry, 1)
+	cfg, err := writeMCPConfig(o.Root, false, o.Context7)
+	if err != nil {
+		return err
+	}
+	lead := pickAgent(p.Team, "lead", "architect", "tech", "planner")
 
 	for _, phase := range csddPhases {
 		feedback := ""
 		approved := false
 		for attempt := 1; attempt <= retries && !approved; attempt++ {
 			logf("     %s: authoring (attempt %d/%d) …", phase, attempt, retries)
-			if _, err := o.Tool.Run(ctx, o.Root, authorPrompt(o, p, feat, phase, feedback)); err != nil {
+			if _, err := o.Tool.Run(ctx, o.Root, authorPrompt(o, p, feat, phase, feedback), brainArgs(cfg, lead)...); err != nil {
 				logf("     tool exited with error: %v (continuing to review)", err)
 			}
 
@@ -339,12 +348,13 @@ type reviewVerdict struct {
 // sibling feats, the knowledge graph — not just mechanical validity. csdd's
 // mechanical gate runs separately on approve.
 func reviewSpec(ctx context.Context, o Options, p *program.PRD, feat *program.Feat, phase string) (reviewVerdict, error) {
-	cfg, err := writeMCPConfig(o.Root, false)
+	cfg, err := writeMCPConfig(o.Root, false, o.Context7)
 	if err != nil {
 		return reviewVerdict{}, err
 	}
+	agent := pickAgent(p.Team, "review", "critic", "qa")
 	var v reviewVerdict
-	if err := brainJSON(ctx, o, reviewPrompt(p, feat, phase), &v, "--mcp-config", cfg); err != nil {
+	if err := brainJSON(ctx, o, reviewPrompt(p, feat, phase), &v, brainArgs(cfg, agent)...); err != nil {
 		return reviewVerdict{}, err
 	}
 	if !v.Approve && len(v.Reasons) == 0 {
@@ -419,12 +429,13 @@ type e2eVerdict struct {
 // Playwright as hands/eyes for UI) against the acceptance criteria and judge
 // pass/fail. Only a pass flips the feat to done.
 func phaseE2E(ctx context.Context, o Options, p *program.PRD, feat *program.Feat) error {
-	cfg, err := writeMCPConfig(o.Root, true)
+	cfg, err := writeMCPConfig(o.Root, true, o.Context7)
 	if err != nil {
 		return err
 	}
+	agent := pickAgent(p.Team, "e2e", "qa", "accept")
 	var v e2eVerdict
-	if err := brainJSON(ctx, o, e2ePrompt(p, feat), &v, "--mcp-config", cfg); err != nil {
+	if err := brainJSON(ctx, o, e2ePrompt(p, feat), &v, brainArgs(cfg, agent)...); err != nil {
 		return err
 	}
 	if !v.Passed {

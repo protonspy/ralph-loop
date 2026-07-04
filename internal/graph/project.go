@@ -58,6 +58,94 @@ func ProjectPRD(s *Store, p *program.PRD) error {
 	return nil
 }
 
+// ReqTrace is a component→requirement traceability link, derived from a task's
+// _Boundary_ (the component) and its _Requirements_ annotation.
+type ReqTrace struct{ Component, Requirement string }
+
+// SpecProjection is the structured slice of a csdd spec the projector needs.
+// The caller (which owns the tasks.md parser) extracts it, keeping this package
+// free of the spec parser.
+type SpecProjection struct {
+	FeatID       string
+	Requirements []string   // spec-local requirement IDs, e.g. "1.1"
+	Components   []string   // component/boundary names from the design
+	Traces       []ReqTrace // component → requirement links
+}
+
+// ProjectSpec mirrors a feat's approved csdd contract into the graph — the
+// requirement/component tier of the living documentation graph (feat→spec,
+// spec→requirement, feat→component, component→requirement). Idempotent:
+// entities and identical facts dedupe in the store. Requirement names are
+// namespaced by feat (IDs are spec-local and would otherwise collide); component
+// names are shared across feats on purpose, so cross-feat reuse surfaces.
+func ProjectSpec(s *Store, in SpecProjection) error {
+	if in.FeatID == "" {
+		return fmt.Errorf("feat id is required")
+	}
+	feat, err := s.UpsertEntity(KindFeat, in.FeatID)
+	if err != nil {
+		return err
+	}
+	sp, err := s.UpsertEntity(KindSpec, in.FeatID)
+	if err != nil {
+		return err
+	}
+	if _, err := s.AddFact(FactInput{
+		Src: feat.UUID, Dst: sp.UUID, Rel: RelHasSpec,
+		Fact: fmt.Sprintf("feat %s is specified by spec %s", in.FeatID, in.FeatID),
+	}); err != nil {
+		return err
+	}
+
+	reqNode := make(map[string]Entity, len(in.Requirements))
+	for _, r := range in.Requirements {
+		n, err := s.UpsertEntity(KindRequirement, in.FeatID+"/"+r)
+		if err != nil {
+			return err
+		}
+		reqNode[r] = n
+		if _, err := s.AddFact(FactInput{
+			Src: sp.UUID, Dst: n.UUID, Rel: RelHasReq,
+			Fact: fmt.Sprintf("spec %s has requirement %s", in.FeatID, r),
+		}); err != nil {
+			return err
+		}
+	}
+
+	compNode := make(map[string]Entity, len(in.Components))
+	for _, c := range in.Components {
+		n, err := s.UpsertEntity(KindComponent, c)
+		if err != nil {
+			return err
+		}
+		compNode[c] = n
+		if _, err := s.AddFact(FactInput{
+			Src: feat.UUID, Dst: n.UUID, Rel: RelHasComponent,
+			Fact: fmt.Sprintf("feat %s has component %s", in.FeatID, c),
+		}); err != nil {
+			return err
+		}
+	}
+
+	for _, t := range in.Traces {
+		c, ok := compNode[t.Component]
+		if !ok {
+			continue
+		}
+		r, ok := reqNode[t.Requirement]
+		if !ok {
+			continue
+		}
+		if _, err := s.AddFact(FactInput{
+			Src: c.UUID, Dst: r.UUID, Rel: RelTracesTo,
+			Fact: fmt.Sprintf("component %s traces to requirement %s/%s", t.Component, in.FeatID, t.Requirement),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // setStatus records "feat X has status S" as a temporal fact, superseding the
 // previous status fact when the status changed.
 func (s *Store) setStatus(n Entity, f *program.Feat) error {

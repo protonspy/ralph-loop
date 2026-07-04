@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 
 	"github.com/protonspy/ralph-loop/internal/gate"
+	"github.com/protonspy/ralph-loop/internal/gitx"
 	"github.com/protonspy/ralph-loop/internal/loop"
 	"github.com/protonspy/ralph-loop/internal/program"
 	"github.com/protonspy/ralph-loop/internal/tool"
@@ -26,6 +27,7 @@ type Options struct {
 	Challenge   string        // the natural-language challenge (empty ⇒ resume existing program)
 	Tool        tool.Runner   // AI tool for brain activations + inner loop
 	Csdd        gate.Resolver // how to invoke csdd (gate + factory)
+	Context7    string        // optional MCP command for Context7 docs (empty = disabled)
 	MaxIter  int // inner loop max iterations per feat
 	MaxRetry int // inner loop retries per unit
 	DryRun   bool // print the end-to-end plan; mutate nothing, spawn nothing
@@ -40,11 +42,23 @@ func Run(ctx context.Context, o Options) error {
 		return printPlan(o, logf)
 	}
 
+	// The manager pipeline needs claude for structured (JSON) brain activations;
+	// amp only drives the inner loop's plain-text iterations.
+	if o.Tool.Name != "" && o.Tool.Name != "claude" {
+		return fmt.Errorf("the challenge pipeline needs claude for structured brain activations; --tool %q only works for the inner loop (rl run <spec-dir>)", o.Tool.Name)
+	}
+
 	p, err := program.Bootstrap(o.Root, o.Challenge)
 	if err != nil {
 		return fmt.Errorf("bootstrap program: %w", err)
 	}
 	logf("program %q on branch %s", p.Program, p.Branch)
+
+	// Isolate the program's autonomous work on its own branch so every commit
+	// (spec-up, build) lands there rather than on the base branch.
+	if err := gitx.EnsureBranch(ctx, o.Root, p.Branch); err != nil {
+		logf("   ⚠ could not check out %s (commits will land on the current branch): %v", p.Branch, err)
+	}
 
 	// Front of the pipeline: staff a team, then decompose the PRD into feats.
 	if len(p.Feats) == 0 {
@@ -62,6 +76,12 @@ func Run(ctx context.Context, o Options) error {
 		}
 		logf("   → %d feats written to %s", len(p.Feats), program.Path(o.Root))
 		projectGraph(o, p)
+	}
+
+	// Commit the front-of-pipeline artifacts (staffed team under .claude/, the
+	// seeded CLAUDE.md) so the build gate starts from a clean tree.
+	if err := gitx.CommitAll(ctx, o.Root, "chore("+p.Program+"): staff team + project conventions"); err != nil {
+		logf("   ⚠ could not commit initial workspace state: %v", err)
 	}
 
 	// Outer loop: drive each feat to "done" (built AND E2E-accepted).
@@ -101,8 +121,15 @@ func driveFeat(ctx context.Context, o Options, p *program.PRD, feat *program.Fea
 			return fmt.Errorf("phase spec-up: %w", err)
 		}
 		feat.Status = program.StatusSpecGenerated
-		_ = program.Save(o.Root, p)
+		if err := program.Save(o.Root, p); err != nil {
+			return err
+		}
 		projectGraph(o, p)
+		// Project the freshly-authored contract (requirements/components/traces)
+		// into the living documentation graph. Best-effort.
+		if err := projectSpecGraph(o, p, feat); err != nil {
+			logf("  ⚠ graph spec projection: %v", err)
+		}
 	}
 
 	// ③b AUTONOMOUS approval gate — NO human in the loop. The contextual
@@ -114,14 +141,18 @@ func driveFeat(ctx context.Context, o Options, p *program.PRD, feat *program.Fea
 			return fmt.Errorf("phase approve: %w", err)
 		}
 		feat.Status = program.StatusApproved
-		_ = program.Save(o.Root, p)
+		if err := program.Save(o.Root, p); err != nil {
+			return err
+		}
 		projectGraph(o, p)
 	}
 
 	// ④ build: the inner csdd contract loop (already implemented).
 	if feat.Status == program.StatusApproved || feat.Status == program.StatusImplementing {
 		feat.Status = program.StatusImplementing
-		_ = program.Save(o.Root, p)
+		if err := program.Save(o.Root, p); err != nil {
+			return err
+		}
 		projectGraph(o, p)
 		logf("  ④ build (inner loop) …")
 		if err := phaseBuild(ctx, o, feat); err != nil {

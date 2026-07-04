@@ -36,11 +36,12 @@ type Feat struct {
 
 // PRD is the whole program: the challenge and its feats.
 type PRD struct {
-	Program   string  `json:"program"`
-	Challenge string  `json:"challenge"`
-	PRDPath   string  `json:"prd,omitempty"` // path to the full PRD markdown, once written
-	Branch    string  `json:"branch"`
-	Feats     []*Feat `json:"feats"`
+	Program   string   `json:"program"`
+	Challenge string   `json:"challenge"`
+	PRDPath   string   `json:"prd,omitempty"`  // path to the full PRD markdown, once written
+	Branch    string   `json:"branch"`
+	Team      []string `json:"team,omitempty"` // staffed agent slugs (⓪), activated via --agent in later phases
+	Feats     []*Feat  `json:"feats"`
 }
 
 // Dir returns the .ralph directory for a workspace root.
@@ -114,8 +115,76 @@ func Bootstrap(root, challenge string) (*PRD, error) {
 	if err := os.WriteFile(filepath.Join(Dir(root), ".gitignore"), []byte("*\n"), 0o644); err != nil {
 		return nil, err
 	}
+	// Seed CLAUDE.md with the durable, cross-cutting conventions every brain
+	// activation (build loop AND csdd spec work) inherits. Never clobber a
+	// hand-written one.
+	if err := writeClaudeMD(root); err != nil {
+		return nil, err
+	}
 	return p, nil
 }
+
+// WritePRDDoc renders the decomposed program as a human-readable PRD markdown at
+// .ralph/prd.md and returns its root-relative path (for PRD.PRDPath).
+func WritePRDDoc(root string, p *PRD, summary string) (string, error) {
+	if err := os.MkdirAll(Dir(root), 0o755); err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "# PRD — %s\n\n**Challenge:** %s\n\n", p.Program, p.Challenge)
+	if s := strings.TrimSpace(summary); s != "" {
+		fmt.Fprintf(&b, "## Summary\n\n%s\n\n", s)
+	}
+	b.WriteString("## Feats (dependency order)\n\n")
+	for _, f := range p.Feats {
+		deps := "—"
+		if len(f.Depends) > 0 {
+			deps = strings.Join(f.Depends, ", ")
+		}
+		fmt.Fprintf(&b, "- **%s** — %s _(depends: %s)_\n", f.ID, f.Title, deps)
+	}
+	if err := os.WriteFile(filepath.Join(Dir(root), "prd.md"), []byte(b.String()), 0o644); err != nil {
+		return "", err
+	}
+	return filepath.Join(".ralph", "prd.md"), nil
+}
+
+func writeClaudeMD(root string) error {
+	path := filepath.Join(root, "CLAUDE.md")
+	if _, err := os.Stat(path); err == nil {
+		return nil // respect an existing CLAUDE.md
+	}
+	return os.WriteFile(path, []byte(claudeMD), 0o644)
+}
+
+// claudeMD is auto-loaded by every `claude` activation (build loop AND csdd
+// spec authoring). It holds ONLY durable, cross-cutting conventions — the
+// project-flow layer. Per-task instructions arrive in each iteration's prompt.
+const claudeMD = `# Project conventions
+
+This workspace is built autonomously by ralph-loop: stateless, fresh-context
+iterations over a csdd SDD+TDD contract. This file is the DURABLE, cross-cutting
+convention layer that every Claude activation inherits. Task-specific direction
+arrives in each iteration's prompt — keep that out of here.
+
+## Workflow
+- Work one scoped behavior per iteration; everything you need is in files, not memory.
+- On a RED/GREEN pair follow strict TDD: write the failing test first, confirm it
+  fails for the expected reason, then the minimal code to make it pass; refactor green.
+- Stay strictly inside the declared component boundary; never edit outside it.
+
+## Knowledge graph (MCP server "graph")
+- BEFORE working, query it (search_facts / search_nodes / neighbors) to reuse what
+  is already known.
+- AFTER learning something durable, record it: add_episode for the raw source, then
+  add_fact (endpoints as kind+name, one sentence per fact). Supersede a contradicted
+  fact by passing its uuid in supersedes — never assume deletion.
+
+## Commits
+- Conventional Commits (feat:, fix:, docs:, chore:, test:). One behavior per commit.
+- Commit ALL your changes; never leave the working tree dirty. Never commit on a red suite.
+- Do NOT push.
+`
 
 // NextFeat returns the first not-done feat whose dependencies are all done.
 // The bool reports whether the whole program is complete.

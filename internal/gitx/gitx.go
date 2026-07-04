@@ -55,3 +55,54 @@ func Dirty(ctx context.Context, dir string) (bool, error) {
 	}
 	return out != "", nil
 }
+
+// CurrentBranch returns the checked-out branch name, or "" on a detached HEAD.
+func CurrentBranch(ctx context.Context, dir string) (string, error) {
+	out, err := git(ctx, dir, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	if out == "HEAD" {
+		return "", nil // detached
+	}
+	return out, nil
+}
+
+// EnsureBranch checks out branch, creating it (forked from the current HEAD) if
+// it does not exist. A no-op when already on it. This is what isolates a
+// program's autonomous work onto ralph/<slug> instead of polluting the base
+// branch.
+func EnsureBranch(ctx context.Context, dir, branch string) error {
+	cur, err := CurrentBranch(ctx, dir)
+	if err != nil {
+		return err
+	}
+	if cur == branch {
+		return nil
+	}
+	if _, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		_, err := git(ctx, dir, "checkout", branch)
+		return err
+	}
+	_, err = git(ctx, dir, "checkout", "-b", branch)
+	return err
+}
+
+// CommitAll stages every change (untracked included) and commits it. It is a
+// no-op on a clean tree. Used to establish a clean baseline before the atomic
+// build gate, so front-of-pipeline artifacts (the staffed team under .claude/,
+// the generated CLAUDE.md) don't count as a "dirty" iteration.
+func CommitAll(ctx context.Context, dir, msg string) error {
+	dirty, err := Dirty(ctx, dir)
+	if err != nil {
+		return err
+	}
+	if !dirty {
+		return nil
+	}
+	if _, err := git(ctx, dir, "add", "-A"); err != nil {
+		return err
+	}
+	_, err = git(ctx, dir, "commit", "-m", msg)
+	return err
+}

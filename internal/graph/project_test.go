@@ -87,6 +87,47 @@ func TestProjectPRDStatusIsTemporal(t *testing.T) {
 	}
 }
 
+func TestProjectSpec(t *testing.T) {
+	s := openTestStore(t)
+	in := SpecProjection{
+		FeatID:       "tile-map",
+		Requirements: []string{"1.1", "1.2"},
+		Components:   []string{"Renderer"},
+		Traces:       []ReqTrace{{"Renderer", "1.1"}, {"Renderer", "1.2"}},
+	}
+	if err := ProjectSpec(s, in); err != nil {
+		t.Fatal(err)
+	}
+	if err := ProjectSpec(s, in); err != nil { // idempotent
+		t.Fatal(err)
+	}
+
+	// feat + spec + 2 requirements + 1 component = 5 entities, no dupes.
+	ents, err := s.Entities()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]int{}
+	for _, e := range ents {
+		kinds[e.Kind]++
+	}
+	if kinds[KindFeat] != 1 || kinds[KindSpec] != 1 || kinds[KindRequirement] != 2 || kinds[KindComponent] != 1 {
+		t.Fatalf("entity kinds = %v (want feat1 spec1 req2 comp1)", kinds)
+	}
+
+	// HAS_SPEC + 2 HAS_REQ + HAS_COMPONENT + 2 TRACES_TO = 6 facts, no dupes.
+	facts, err := s.CurrentFacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts) != 6 {
+		t.Fatalf("current facts = %d, want 6: %+v", len(facts), facts)
+	}
+	if got, _ := s.SearchFacts("traces to requirement tile-map/1.1", 5); len(got) != 1 {
+		t.Errorf("expected one TRACES_TO fact for 1.1, got %+v", got)
+	}
+}
+
 func TestExportMermaidAndDOT(t *testing.T) {
 	s := openTestStore(t)
 	if err := ProjectPRD(s, testPRD()); err != nil {

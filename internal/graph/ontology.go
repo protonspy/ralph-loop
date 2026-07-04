@@ -23,6 +23,7 @@ const (
 const (
 	RelDependsOn    = "DEPENDS_ON"    // feat→feat, component→component
 	RelHasFeat      = "HAS_FEAT"      // program→feat (rl extension: keeps the graph connected)
+	RelHasSpec      = "HAS_SPEC"      // feat→spec (rl extension: connects a feat to its csdd spec)
 	RelHasReq       = "HAS_REQ"       // spec→requirement
 	RelHasComponent = "HAS_COMPONENT" // feat→component
 	RelTracesTo     = "TRACES_TO"     // task→requirement

@@ -10,6 +10,7 @@ import (
 
 	"github.com/protonspy/ralph-loop/internal/graph"
 	"github.com/protonspy/ralph-loop/internal/program"
+	"github.com/protonspy/ralph-loop/internal/spec"
 	"github.com/protonspy/ralph-loop/internal/tool"
 )
 
@@ -18,10 +19,10 @@ import (
 // helper every brain phase goes through.
 
 // writeMCPConfig materializes an --mcp-config file under .ralph/ giving the
-// activation our graph KB (served by this same rl binary over stdio) and,
-// for E2E, Playwright as hands/eyes. Rewritten every time: the rl path or root
-// may change between runs.
-func writeMCPConfig(root string, playwright bool) (string, error) {
+// activation our graph KB (served by this same rl binary over stdio), optionally
+// Context7 (authoritative library docs) and, for E2E, Playwright as hands/eyes.
+// Rewritten every time: the rl path or root may change between runs.
+func writeMCPConfig(root string, playwright bool, context7 string) (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("locate rl binary for graph MCP: %w", err)
@@ -33,6 +34,9 @@ func writeMCPConfig(root string, playwright bool) (string, error) {
 	if playwright {
 		servers["playwright"] = map[string]any{"command": "npx", "args": []string{"-y", "@playwright/mcp@latest"}}
 		name = "mcp-e2e.json"
+	}
+	if fields := strings.Fields(context7); len(fields) > 0 {
+		servers["context7"] = map[string]any{"command": fields[0], "args": fields[1:]}
 	}
 	raw, err := json.MarshalIndent(map[string]any{"mcpServers": servers}, "", "  ")
 	if err != nil {
@@ -46,6 +50,34 @@ func writeMCPConfig(root string, playwright bool) (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+// brainArgs assembles the common activation flags: the graph/E2E MCP config and,
+// when a bespoke specialist was staffed for the role, --agent to activate it.
+func brainArgs(cfg, agent string) []string {
+	var args []string
+	if cfg != "" {
+		args = append(args, "--mcp-config", cfg)
+	}
+	if agent != "" {
+		args = append(args, "--agent", agent)
+	}
+	return args
+}
+
+// pickAgent returns the staffed agent whose slug contains any of the role
+// keywords (first keyword, then first team match wins), or "" to fall back to
+// the default brain. This is how ⓪ staffing actually reshapes later phases:
+// research/spec-up/review/E2E activate their matching specialist.
+func pickAgent(team []string, keywords ...string) string {
+	for _, kw := range keywords {
+		for _, a := range team {
+			if strings.Contains(strings.ToLower(a), kw) {
+				return a
+			}
+		}
+	}
+	return ""
 }
 
 // brainJSON is one structured brain activation: fresh context, headless JSON
@@ -98,4 +130,46 @@ func projectGraph(o Options, p *program.PRD) {
 	if err := graph.ProjectPRD(store, p); err != nil {
 		fmt.Fprintf(o.Out, "  ⚠ graph projection: %v\n", err)
 	}
+}
+
+// projectSpecGraph mirrors an approved feat's csdd contract (requirements,
+// components, traceability) into the living documentation graph. Best-effort,
+// like projectGraph: the graph is documentation, not a gate.
+func projectSpecGraph(o Options, p *program.PRD, feat *program.Feat) error {
+	s, err := spec.Load(filepath.Join(o.Root, feat.Spec))
+	if err != nil {
+		return err
+	}
+	store, err := graph.Open(graph.DBPath(o.Root), p.Program)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	return graph.ProjectSpec(store, specProjection(feat.ID, s))
+}
+
+// specProjection extracts the graph-projectable slice of a parsed spec: the
+// requirements it references, the components (task boundaries) it introduces,
+// and the component→requirement traces those tasks encode.
+func specProjection(featID string, s *spec.Spec) graph.SpecProjection {
+	var reqs, comps []string
+	var traces []graph.ReqTrace
+	seenReq, seenComp := map[string]bool{}, map[string]bool{}
+	for _, leaf := range s.Leaves() {
+		comp := leaf.Boundary
+		if comp != "" && !seenComp[comp] {
+			seenComp[comp] = true
+			comps = append(comps, comp)
+		}
+		for _, r := range leaf.Requirements {
+			if !seenReq[r] {
+				seenReq[r] = true
+				reqs = append(reqs, r)
+			}
+			if comp != "" {
+				traces = append(traces, graph.ReqTrace{Component: comp, Requirement: r})
+			}
+		}
+	}
+	return graph.SpecProjection{FeatID: featID, Requirements: reqs, Components: comps, Traces: traces}
 }

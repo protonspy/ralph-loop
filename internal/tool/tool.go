@@ -36,11 +36,13 @@ func (r Runner) Command() ([]string, error) {
 // Run executes one fresh iteration, feeding prompt on stdin. It returns the
 // combined captured output. A non-zero exit is returned as err but the captured
 // output is still valid — like ralph.sh, a tool failure should not kill the loop.
-func (r Runner) Run(ctx context.Context, dir, prompt string) (string, error) {
+// extraArgs append tool flags (e.g. --mcp-config, --agent) after the base argv.
+func (r Runner) Run(ctx context.Context, dir, prompt string, extraArgs ...string) (string, error) {
 	argv, err := r.Command()
 	if err != nil {
 		return "", err
 	}
+	argv = append(argv, extraArgs...)
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(prompt)
