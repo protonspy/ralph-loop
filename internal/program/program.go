@@ -113,14 +113,10 @@ func Bootstrap(root, challenge string) (*PRD, error) {
 	if err := os.WriteFile(filepath.Join(Dir(root), ".gitignore"), []byte("*\n"), 0o644); err != nil {
 		return nil, err
 	}
-	// ralph-loop scaffolds the workspace ITSELF instead of running `csdd init`:
-	// a .claude/ directory (the anchor csdd uses to recognize a workspace) and a
-	// self-contained CLAUDE.md carrying every durable instruction. Both are
-	// create/write-if-absent, so a user-provided csdd workspace or CLAUDE.md wins.
+	// ralph-loop scaffolds the .claude/ anchor itself instead of running
+	// `csdd init` (create-if-absent, so a user-provided csdd workspace wins). The
+	// CLAUDE.md is written separately by the caller, which knows the csdd command.
 	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
-		return nil, err
-	}
-	if err := EnsureCLAUDEMD(root); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -151,16 +147,20 @@ func WritePRDDoc(root string, p *PRD, summary string) (string, error) {
 	return filepath.Join(".ralph", "prd.md"), nil
 }
 
-// EnsureCLAUDEMD writes a fallback CLAUDE.md holding ralph-loop's durable,
-// cross-cutting conventions — but only if one does not already exist. Since
-// `csdd init` now owns a consolidated CLAUDE.md (csdd PR #38, which also removed
-// csdd.md), this is the fallback for when csdd init was unavailable or skipped.
-func EnsureCLAUDEMD(root string) error {
+// EnsureCLAUDEMD writes ralph-loop's durable, self-contained CLAUDE.md — but only
+// if one does not already exist (a user- or csdd-provided CLAUDE.md wins). The
+// csddCmd (e.g. "npx -y @protonspy/csdd") is baked in so the brain has the exact
+// invocation, not a placeholder.
+func EnsureCLAUDEMD(root, csddCmd string) error {
 	path := filepath.Join(root, "CLAUDE.md")
 	if _, err := os.Stat(path); err == nil {
 		return nil // csdd (or a human) already provided one
 	}
-	return os.WriteFile(path, []byte(claudeMD), 0o644)
+	if strings.TrimSpace(csddCmd) == "" {
+		csddCmd = "csdd"
+	}
+	body := strings.ReplaceAll(claudeMD, "<CSDD>", csddCmd)
+	return os.WriteFile(path, []byte(body), 0o644)
 }
 
 // claudeMD is auto-loaded by every `claude` activation (build loop AND csdd
@@ -178,17 +178,22 @@ arrives in the iteration's prompt.
 ## Workspace layout
 - ` + "`specs/<feat>/`" + ` — the csdd contract per feature: ` + "`requirements.md`" + ` (EARS),
   ` + "`design.md`" + `, ` + "`tasks.md`" + ` (RED/GREEN TDD checklist), ` + "`spec.json`" + ` (state).
-  csdd is the authority: validate with ` + "`csdd spec validate <feat>`" + `.
 - ` + "`.ralph/`" + ` — ralph-loop runtime state (program tracker, progress log, graph.db,
   MCP configs). Git-ignored; do not edit by hand.
 - ` + "`.claude/`" + ` — agents/skills and Claude config.
 
-## SDD contract (per feature)
-- Author strictly in order: requirements → design → tasks; each phase is validated
-  and approved before the next. Requirements are EARS-form, with observable
-  acceptance criteria. Tasks are small RED/GREEN pairs, each tracing to requirement
-  IDs and carrying a component boundary from the design.
-- Scope every change to ONE feature; never leak work into a sibling feature's spec.
+## csdd — the SDD contract authority
+Invoke csdd exactly as: ` + "`<CSDD>`" + `.
+Author each feature's contract in csdd's MANDATORY order — **design → requirements →
+tasks** (out of order breaks csdd's gates). Per feature ` + "`<feat>`" + `:
+- ` + "`<CSDD> spec init <feat>`" + `                                 scaffold the spec (once, in design)
+- ` + "`<CSDD> spec generate <feat> --artifact design|requirements|tasks`" + `   emit the template
+- ` + "`<CSDD> spec validate <feat> --root .`" + `                   must exit 0 before approval
+- ` + "`<CSDD> spec approve <feat> --phase <phase>`" + `             gates the phase
+Requirements are EARS-form with observable acceptance criteria; tasks are small
+RED/GREEN pairs tracing to requirement IDs with a boundary from the design. Scope
+every change to ONE feature. **Branch, PR and merge are csdd's job — never create
+git branches yourself.**
 
 ## TDD workflow (per task)
 - On a RED/GREEN pair: write the failing test FIRST, run it, confirm it fails for

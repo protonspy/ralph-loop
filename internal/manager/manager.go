@@ -53,11 +53,17 @@ func Run(ctx context.Context, o Options) error {
 	}
 	logf("program %q", p.Program)
 
+	// Write the self-contained CLAUDE.md with the exact csdd invocation baked in
+	// (write-if-absent, so a user/csdd-provided one wins).
+	if err := program.EnsureCLAUDEMD(o.Root, o.Csdd.Command()); err != nil {
+		return err
+	}
+
 	// ralph-loop does NOT define git branches — branch, PR and merge are csdd's
 	// responsibility. We stay on whatever branch csdd/the user set up and let the
 	// pipeline's commits land there. The workspace is scaffolded by
-	// program.Bootstrap (a .claude/ anchor + a self-contained CLAUDE.md); the team
-	// is pulled in via `csdd copy` during staffing below.
+	// program.Bootstrap (a .claude/ anchor); the team is pulled in via `csdd copy`
+	// during staffing below.
 
 	// Front of the pipeline: staff a team, then decompose the PRD into feats.
 	if len(p.Feats) == 0 {
