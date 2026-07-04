@@ -27,6 +27,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -43,7 +45,14 @@ type Store struct {
 }
 
 // Open opens (creating if needed) the graph database and ensures the schema.
+// The parent directory (e.g. .ralph/) is created if missing so a freshly-spawned
+// `rl graph mcp --root <dir>` works before the pipeline has scaffolded it.
 func Open(path, group string) (*Store, error) {
+	if dir := filepath.Dir(path); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err

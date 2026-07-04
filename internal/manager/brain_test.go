@@ -69,9 +69,22 @@ func TestPromptsCarryTheirContracts(t *testing.T) {
 	p, feat := testProgram()
 	o := Options{Csdd: gate.Resolver{"npx", "-y", "@protonspy/csdd"}}
 
-	author := authorPrompt(o, p, feat, "requirements", "fix the acceptance criteria", graphToolsHint)
+	// csdd's order is design → requirements → tasks, so `spec init` lives in the
+	// FIRST (design) phase, not requirements.
+	design := authorPrompt(o, p, feat, "design", "", graphToolsHint)
 	for _, want := range []string{
 		"npx -y @protonspy/csdd spec init tile-map",
+		"--artifact design",
+		"specs/tile-map/design.md",
+	} {
+		if !strings.Contains(design, want) {
+			t.Errorf("authorPrompt(design) missing %q", want)
+		}
+	}
+
+	author := authorPrompt(o, p, feat, "requirements", "fix the acceptance criteria", graphToolsHint)
+	for _, want := range []string{
+		"--artifact requirements",
 		"specs/tile-map/requirements.md",
 		"EARS",
 		"REVIEWER FEEDBACK",

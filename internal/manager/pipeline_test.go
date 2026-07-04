@@ -143,17 +143,17 @@ case "$prompt" in
     fi ;;
   *"E2E acceptance judge"*)
     emit '{"passed":true,"evidence":"ran hello and saw the greeting","reasons":[]}' ;;
-  *"REQUIREMENTS artifact"*)
+  *"DESIGN artifact"*)
     mkdir -p specs/hello-feat
     cat > specs/hello-feat/spec.json <<'EOF'
-{"feature_name":"hello-feat","phase":"requirements","development_flow":"tdd","approvals":{},"ready_for_implementation":false}
+{"feature_name":"hello-feat","phase":"design","development_flow":"tdd","approvals":{},"ready_for_implementation":false}
 EOF
-    echo "WHEN run THEN the system SHALL greet (attempt $RANDOM)" > specs/hello-feat/requirements.md
-    git add specs/hello-feat && git commit -q --allow-empty -m "docs(hello-feat): author requirements"
-    echo authored ;;
-  *"DESIGN artifact"*)
     echo "one Greeter component" > specs/hello-feat/design.md
     git add specs/hello-feat && git commit -q --allow-empty -m "docs(hello-feat): author design"
+    echo authored ;;
+  *"REQUIREMENTS artifact"*)
+    echo "WHEN run THEN the system SHALL greet (attempt $RANDOM)" > specs/hello-feat/requirements.md
+    git add specs/hello-feat && git commit -q --allow-empty -m "docs(hello-feat): author requirements"
     echo authored ;;
   *"TASKS artifact"*)
     cat > specs/hello-feat/tasks.md <<'EOF'

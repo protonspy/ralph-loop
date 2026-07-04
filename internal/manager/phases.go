@@ -181,13 +181,14 @@ Respond with ONLY this JSON, no prose, no code fences:
 
 // ---- ③ spec-up (author + review + approve, per csdd phase) ----
 
-// csddPhases in contract order. csdd gates each artifact on the previous
-// phase's approval, so authoring and approval are interleaved per phase.
-var csddPhases = []string{"requirements", "design", "tasks"}
+// csddPhases in csdd's contract order: design → requirements → tasks. csdd gates
+// each artifact on the PREVIOUS phase's approval, so this order is mandatory —
+// generating out of order breaks the gates. Authoring and approval interleave.
+var csddPhases = []string{"design", "requirements", "tasks"}
 
 // phaseSpecUp manufactures the csdd contract for a feat. For each contract
-// phase (requirements → design → tasks) it runs the autonomous version of
-// csdd's human loop:
+// phase (design → requirements → tasks — csdd's mandatory gate order) it runs
+// the autonomous version of csdd's human loop:
 //
 //	author (brain, agentic) → contextual review (brain, D8) → csdd approve (mechanical)
 //
@@ -259,17 +260,17 @@ func authorPrompt(o Options, p *program.PRD, feat *program.Feat, phase, feedback
 	pr("1. Read .ralph/progress.md (this feat's research summary) and query the graph")
 	pr("   (search_facts, neighbors on feat %q) before writing anything.", feat.ID)
 	switch phase {
-	case "requirements":
-		pr("2. If %s/spec.json does not exist, scaffold it: %s spec init %s", feat.Spec, o.Csdd.Command(), feat.ID)
-		pr("3. Author %s/requirements.md: EARS-format requirements (WHEN/WHILE/IF-THEN", feat.Spec)
-		pr("   shall-statements), each grounded in the challenge and the indexed research.")
-		pr("   Scope = THIS feat only; sibling feats own their own requirements.")
-		pr("   Include concrete acceptance criteria — the E2E phase will judge against them.")
 	case "design":
-		pr("2. Generate the template: %s spec generate %s --artifact design", o.Csdd.Command(), feat.ID)
+		pr("2. Scaffold + template: if %s/spec.json is missing run %s spec init %s, then", feat.Spec, o.Csdd.Command(), feat.ID)
+		pr("   %s spec generate %s --artifact design", o.Csdd.Command(), feat.ID)
 		pr("3. Author %s/design.md: architecture for this feat — components with clear", feat.Spec)
-		pr("   boundaries, data flow, technology choices justified by graph facts, and a")
-		pr("   boundary map consistent with the approved requirements.")
+		pr("   boundaries, data flow, and technology choices grounded in the challenge and")
+		pr("   the indexed research. (csdd's contract order is design → requirements → tasks.)")
+	case "requirements":
+		pr("2. Generate the template: %s spec generate %s --artifact requirements", o.Csdd.Command(), feat.ID)
+		pr("3. Author %s/requirements.md: EARS-format requirements (WHEN/WHILE/IF-THEN", feat.Spec)
+		pr("   shall-statements), consistent with the approved design and scoped to THIS feat.")
+		pr("   Include concrete acceptance criteria — the E2E phase will judge against them.")
 	case "tasks":
 		pr("2. Generate the template: %s spec generate %s --artifact tasks", o.Csdd.Command(), feat.ID)
 		pr("3. Author %s/tasks.md: small RED/GREEN TDD task pairs (test-first), each", feat.Spec)
