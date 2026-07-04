@@ -89,9 +89,66 @@ CREATE INDEX IF NOT EXISTS ix_edge_dst ON entity_edges(dst);
 CREATE INDEX IF NOT EXISTS ix_edge_srcrel ON entity_edges(src, rel);
 CREATE INDEX IF NOT EXISTS ix_edge_expired ON entity_edges(expired_at);
 CREATE INDEX IF NOT EXISTS ix_edge_valid ON entity_edges(valid_at);
-CREATE INDEX IF NOT EXISTS ix_edge_invalid ON entity_edges(invalid_at);`
-	_, err := s.db.Exec(ddl)
-	return err
+CREATE INDEX IF NOT EXISTS ix_edge_invalid ON entity_edges(invalid_at);
+
+-- Full-text search (FTS5, default unicode61 tokenizer). Optimized for word/prose
+-- recall — terms match across hyphen/dot/slash boundaries ("collision" finds
+-- "collision-system"; "lifecycle" finds "lifecycle."). Exact ID/path distinction
+-- (1.1 vs 1.2) is intentionally NOT a search concern — use structured lookups for
+-- that. Each FTS table shares the base table's rowid and is synced by triggers.
+CREATE VIRTUAL TABLE IF NOT EXISTS entity_fts USING fts5(name, summary);
+CREATE TRIGGER IF NOT EXISTS entity_fts_ai AFTER INSERT ON entity_nodes BEGIN
+  INSERT INTO entity_fts(rowid, name, summary) VALUES(new.rowid, new.name, new.summary);
+END;
+CREATE TRIGGER IF NOT EXISTS entity_fts_au AFTER UPDATE ON entity_nodes BEGIN
+  UPDATE entity_fts SET name=new.name, summary=new.summary WHERE rowid=new.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS entity_fts_ad AFTER DELETE ON entity_nodes BEGIN
+  DELETE FROM entity_fts WHERE rowid=old.rowid;
+END;
+
+CREATE VIRTUAL TABLE IF NOT EXISTS edge_fts USING fts5(fact, rel);
+CREATE TRIGGER IF NOT EXISTS edge_fts_ai AFTER INSERT ON entity_edges BEGIN
+  INSERT INTO edge_fts(rowid, fact, rel) VALUES(new.rowid, new.fact, new.rel);
+END;
+CREATE TRIGGER IF NOT EXISTS edge_fts_au AFTER UPDATE ON entity_edges BEGIN
+  UPDATE edge_fts SET fact=new.fact, rel=new.rel WHERE rowid=new.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS edge_fts_ad AFTER DELETE ON entity_edges BEGIN
+  DELETE FROM edge_fts WHERE rowid=old.rowid;
+END;
+
+CREATE VIRTUAL TABLE IF NOT EXISTS episodic_fts USING fts5(name, content);
+CREATE TRIGGER IF NOT EXISTS episodic_fts_ai AFTER INSERT ON episodic_nodes BEGIN
+  INSERT INTO episodic_fts(rowid, name, content) VALUES(new.rowid, new.name, new.content);
+END;`
+	if _, err := s.db.Exec(ddl); err != nil {
+		return err
+	}
+	return s.backfillFTS()
+}
+
+// backfillFTS populates an FTS index that exists but is empty — the upgrade path
+// for a graph.db created before FTS was added (triggers only cover new writes).
+// A no-op once the index is populated, and on a fresh empty database.
+func (s *Store) backfillFTS() error {
+	for _, bf := range []struct{ fts, stmt string }{
+		{"entity_fts", `INSERT INTO entity_fts(rowid, name, summary) SELECT rowid, name, summary FROM entity_nodes`},
+		{"edge_fts", `INSERT INTO edge_fts(rowid, fact, rel) SELECT rowid, fact, rel FROM entity_edges`},
+		{"episodic_fts", `INSERT INTO episodic_fts(rowid, name, content) SELECT rowid, name, content FROM episodic_nodes`},
+	} {
+		var n int
+		if err := s.db.QueryRow(`SELECT count(*) FROM ` + bf.fts).Scan(&n); err != nil {
+			return err
+		}
+		if n > 0 {
+			continue
+		}
+		if _, err := s.db.Exec(bf.stmt); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ---- models ----
@@ -112,6 +169,14 @@ type Fact struct {
 
 // Current reports whether the fact is in the active view (not superseded).
 func (f Fact) Current() bool { return f.ExpiredAt == nil }
+
+// Episode is a raw observation/document (the provenance tier): a research
+// finding, a doc excerpt, a decision's context.
+type Episode struct {
+	UUID, Name, Source, Content string
+	CreatedAt                   time.Time
+	ValidAt                     *time.Time
+}
 
 // ---- entities ----
 
@@ -253,14 +318,26 @@ func (s *Store) invalidate(uuid string, invalidAt, expiredAt time.Time) error {
 
 // ---- queries ----
 
-// SearchNodes finds entities whose name or summary matches the query (LIKE).
+// SearchNodes finds entities whose name or summary matches the query via
+// full-text search (FTS5), ranked by relevance. A blank query lists the most
+// recent entities.
 func (s *Store) SearchNodes(query string, limit int) ([]Entity, error) {
 	limit = clampLimit(limit)
-	like := "%" + strings.ToLower(strings.TrimSpace(query)) + "%"
-	rows, err := s.db.Query(
-		`SELECT uuid, kind, name, summary, created_at FROM entity_nodes
-		 WHERE group_id=? AND (lower(name) LIKE ? OR lower(summary) LIKE ?)
-		 ORDER BY created_at DESC LIMIT ?`, s.group, like, like, limit)
+	m := ftsMatch(query)
+	if m == "" {
+		return s.scanEntities(
+			`SELECT uuid, kind, name, summary, created_at FROM entity_nodes
+			 WHERE group_id=? ORDER BY created_at DESC LIMIT ?`, s.group, limit)
+	}
+	return s.scanEntities(
+		`SELECT e.uuid, e.kind, e.name, e.summary, e.created_at
+		 FROM entity_fts JOIN entity_nodes e ON e.rowid = entity_fts.rowid
+		 WHERE e.group_id=? AND entity_fts MATCH ?
+		 ORDER BY entity_fts.rank LIMIT ?`, s.group, m, limit)
+}
+
+func (s *Store) scanEntities(q string, args ...any) ([]Entity, error) {
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -325,15 +402,77 @@ func (s *Store) CurrentFacts() ([]Fact, error) {
 		 WHERE group_id=? AND expired_at IS NULL ORDER BY created_at`, s.group)
 }
 
-// SearchFacts finds CURRENT facts whose fact text or relation matches the query.
+// SearchFacts finds CURRENT (non-superseded) facts whose text or relation
+// matches the query via full-text search (FTS5), ranked by relevance. A blank
+// query lists the most recent current facts.
 func (s *Store) SearchFacts(query string, limit int) ([]Fact, error) {
 	limit = clampLimit(limit)
-	like := "%" + strings.ToLower(strings.TrimSpace(query)) + "%"
+	m := ftsMatch(query)
+	if m == "" {
+		return s.queryFacts(
+			`SELECT `+edgeCols+` FROM entity_edges
+			 WHERE group_id=? AND expired_at IS NULL
+			 ORDER BY created_at DESC LIMIT ?`, s.group, limit)
+	}
 	return s.queryFacts(
-		`SELECT `+edgeCols+` FROM entity_edges
-		 WHERE group_id=? AND expired_at IS NULL
-		   AND (lower(fact) LIKE ? OR lower(rel) LIKE ?)
-		 ORDER BY created_at DESC LIMIT ?`, s.group, like, like, limit)
+		`SELECT `+edgeColsE+` FROM edge_fts JOIN entity_edges e ON e.rowid = edge_fts.rowid
+		 WHERE e.group_id=? AND e.expired_at IS NULL AND edge_fts MATCH ?
+		 ORDER BY edge_fts.rank LIMIT ?`, s.group, m, limit)
+}
+
+// SearchEpisodes finds raw observations/documents (research findings, doc
+// excerpts) whose name or content matches the query via full-text search — the
+// content-recall path the FTS index unlocks. A blank query lists recent episodes.
+func (s *Store) SearchEpisodes(query string, limit int) ([]Episode, error) {
+	limit = clampLimit(limit)
+	m := ftsMatch(query)
+	var rows *sql.Rows
+	var err error
+	if m == "" {
+		rows, err = s.db.Query(
+			`SELECT uuid, name, source, content, created_at, valid_at FROM episodic_nodes
+			 WHERE group_id=? ORDER BY created_at DESC LIMIT ?`, s.group, limit)
+	} else {
+		rows, err = s.db.Query(
+			`SELECT ep.uuid, ep.name, ep.source, ep.content, ep.created_at, ep.valid_at
+			 FROM episodic_fts JOIN episodic_nodes ep ON ep.rowid = episodic_fts.rowid
+			 WHERE ep.group_id=? AND episodic_fts MATCH ?
+			 ORDER BY episodic_fts.rank LIMIT ?`, s.group, m, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Episode
+	for rows.Next() {
+		var e Episode
+		var created string
+		var valid sql.NullString
+		if err := rows.Scan(&e.UUID, &e.Name, &e.Source, &e.Content, &created, &valid); err != nil {
+			return nil, err
+		}
+		e.CreatedAt, _ = time.Parse(time.RFC3339, created)
+		e.ValidAt = parseNullTime(valid)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// ftsMatch turns free text into a safe FTS5 MATCH expression: each
+// whitespace-separated term becomes a double-quoted literal, implicitly AND-ed.
+// Quoting neutralizes FTS operators (AND/OR/NOT/NEAR/*) a caller might type and,
+// with the tokenizer's tokenchars, keeps hyphen/dot/slash terms whole. Returns
+// "" for a blank query so callers can fall back to a recency listing.
+func ftsMatch(query string) string {
+	fields := strings.Fields(query)
+	if len(fields) == 0 {
+		return ""
+	}
+	quoted := make([]string, 0, len(fields))
+	for _, f := range fields {
+		quoted = append(quoted, `"`+strings.ReplaceAll(f, `"`, `""`)+`"`)
+	}
+	return strings.Join(quoted, " ")
 }
 
 // Neighbors returns current facts reachable from an entity within depth hops
@@ -374,6 +513,10 @@ func (s *Store) FactsAsOf(t time.Time) ([]Fact, error) {
 // ---- internals ----
 
 const edgeCols = `uuid, src, dst, rel, fact, episodes, created_at, valid_at, invalid_at, expired_at`
+
+// edgeColsE is edgeCols qualified with the "e" alias, for joins against edge_fts
+// where the bare fact/rel columns would be ambiguous.
+const edgeColsE = `e.uuid, e.src, e.dst, e.rel, e.fact, e.episodes, e.created_at, e.valid_at, e.invalid_at, e.expired_at`
 
 func (s *Store) queryFacts(q string, args ...any) ([]Fact, error) {
 	rows, err := s.db.Query(q, args...)

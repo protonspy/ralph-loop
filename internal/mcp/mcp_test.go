@@ -87,6 +87,10 @@ func TestAddFactSearchNeighbors(t *testing.T) {
 	if out = callTool(t, s, "search_facts", map[string]any{"query": "scenes"}); !strings.Contains(out, "Phaser 3") {
 		t.Fatalf("search_facts output: %s", out)
 	}
+	// Full-text content recall over raw episodes.
+	if out = callTool(t, s, "search_episodes", map[string]any{"query": "scene lifecycle"}); !strings.Contains(out, "phaser docs") {
+		t.Fatalf("search_episodes output: %s", out)
+	}
 	if out = callTool(t, s, "neighbors", map[string]any{"kind": "concept", "name": "phaser", "depth": 2}); !strings.Contains(out, "RELATES_TO") {
 		t.Fatalf("neighbors output: %s", out)
 	}

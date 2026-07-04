@@ -68,9 +68,17 @@ func toolDefs() []map[string]any {
 		},
 		{
 			"name":        "search_facts",
-			"description": "Find CURRENT facts whose text or relation matches the query. Use before adding facts, to ground answers and to discover uuids to supersede.",
+			"description": "Find CURRENT facts whose text or relation matches the query (full-text, ranked). Use before adding facts, to ground answers and to discover uuids to supersede.",
 			"inputSchema": obj([]string{"query"}, map[string]any{
-				"query": str("substring to match"),
+				"query": str("terms to match (implicitly AND-ed; blank = most recent)"),
+				"limit": num("max results (default 20)"),
+			}),
+		},
+		{
+			"name":        "search_episodes",
+			"description": "Full-text search over raw episodes/documents (research findings, doc excerpts) by name/content. Use to recall the source material behind facts.",
+			"inputSchema": obj([]string{"query"}, map[string]any{
+				"query": str("terms to match (implicitly AND-ed; blank = most recent)"),
 				"limit": num("max results (default 20)"),
 			}),
 		},
@@ -161,6 +169,17 @@ func (s *Server) callTool(name string, args json.RawMessage) map[string]any {
 			return toolResult(nil, err)
 		}
 		out, err := s.store.SearchFacts(a.Query, a.Limit)
+		return toolResult(out, err)
+
+	case "search_episodes":
+		var a struct {
+			Query string
+			Limit int
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return toolResult(nil, err)
+		}
+		out, err := s.store.SearchEpisodes(a.Query, a.Limit)
 		return toolResult(out, err)
 
 	case "neighbors":

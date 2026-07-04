@@ -123,8 +123,17 @@ func TestProjectSpec(t *testing.T) {
 	if len(facts) != 6 {
 		t.Fatalf("current facts = %d, want 6: %+v", len(facts), facts)
 	}
-	if got, _ := s.SearchFacts("traces to requirement tile-map/1.1", 5); len(got) != 1 {
-		t.Errorf("expected one TRACES_TO fact for 1.1, got %+v", got)
+	// FTS matches words, not exact IDs (1.1 vs 1.2 tokenize the same), so both
+	// TRACES_TO facts surface; assert the 1.1 one is present.
+	got, _ := s.SearchFacts("traces to requirement tile-map", 5)
+	var has11 bool
+	for _, f := range got {
+		if f.Rel == RelTracesTo && strings.Contains(f.Fact, "tile-map/1.1") {
+			has11 = true
+		}
+	}
+	if !has11 {
+		t.Errorf("expected a TRACES_TO fact for 1.1 among %+v", got)
 	}
 }
 
