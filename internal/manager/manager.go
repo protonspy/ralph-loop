@@ -155,7 +155,7 @@ func driveFeat(ctx context.Context, o Options, p *program.PRD, feat *program.Fea
 		}
 		projectGraph(o, p)
 		logf("  ④ build (inner loop) …")
-		if err := phaseBuild(ctx, o, feat); err != nil {
+		if err := phaseBuild(ctx, o, p, feat); err != nil {
 			return err
 		}
 	}
@@ -174,8 +174,10 @@ func driveFeat(ctx context.Context, o Options, p *program.PRD, feat *program.Fea
 	return program.AppendProgress(o.Root, feat.ID+" — done", "Built to csdd contract and E2E-accepted.")
 }
 
-// phaseBuild runs the inner loop over the feat's csdd spec.
-func phaseBuild(ctx context.Context, o Options, feat *program.Feat) error {
+// phaseBuild runs the inner loop over the feat's csdd spec. OnUnit projects
+// each gate-passed iteration into the living documentation graph (file→component
+// IMPLEMENTS, test→requirement VERIFIES).
+func phaseBuild(ctx context.Context, o Options, p *program.PRD, feat *program.Feat) error {
 	return loop.Run(ctx, loop.Options{
 		Root:     o.Root,
 		SpecDir:  filepath.Join(o.Root, feat.Spec),
@@ -184,6 +186,7 @@ func phaseBuild(ctx context.Context, o Options, feat *program.Feat) error {
 		Max:      o.MaxIter,
 		MaxRetry: o.MaxRetry,
 		Out:      o.Out,
+		OnUnit:   func(u loop.UnitResult) { projectBuildUnit(o, p, feat, u) },
 	})
 }
 

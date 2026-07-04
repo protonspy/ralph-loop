@@ -56,6 +56,19 @@ func Dirty(ctx context.Context, dir string) (bool, error) {
 	return out != "", nil
 }
 
+// ChangedFiles returns the repo-relative paths that differ between two commits
+// (from..to) — used to see what a build iteration produced.
+func ChangedFiles(ctx context.Context, dir, from, to string) ([]string, error) {
+	out, err := git(ctx, dir, "diff", "--name-only", from, to)
+	if err != nil {
+		return nil, err
+	}
+	if out == "" {
+		return nil, nil
+	}
+	return strings.Split(out, "\n"), nil
+}
+
 // CurrentBranch returns the checked-out branch name, or "" on a detached HEAD.
 func CurrentBranch(ctx context.Context, dir string) (string, error) {
 	out, err := git(ctx, dir, "rev-parse", "--abbrev-ref", "HEAD")

@@ -25,6 +25,16 @@ type Options struct {
 	MaxRetry int           // consecutive failures on the same unit before giving up
 	DryRun   bool          // plan only: print prompts, never spawn/commit
 	Out      io.Writer     // progress sink (defaults handled by caller)
+	OnUnit   func(UnitResult) // optional: called after a unit passes the gate (observational)
+}
+
+// UnitResult reports a committed, gate-passed unit to an optional observer, so
+// higher layers (e.g. the living documentation graph) can record what a build
+// iteration produced. Purely observational — it never affects the gate.
+type UnitResult struct {
+	Tasks  []*spec.Task // the unit's task(s)
+	Files  []string     // repo-relative files changed in the unit's commit
+	Commit string       // the new HEAD after the AI's commit
 }
 
 // Run executes the loop until the spec is complete, blocked, or Max is reached.
@@ -80,6 +90,12 @@ func Run(ctx context.Context, o Options) error {
 		ok, reason := verify(ctx, o, snapshot, ids)
 		if ok {
 			logf("  ✓ gate passed; committed by tool")
+			if o.OnUnit != nil {
+				if head, herr := gitx.Head(ctx, o.Root); herr == nil {
+					files, _ := gitx.ChangedFiles(ctx, o.Root, snapshot, head)
+					o.OnUnit(UnitResult{Tasks: unit, Files: files, Commit: head})
+				}
+			}
 			lastUnit, fails = "", 0
 			continue
 		}

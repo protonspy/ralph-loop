@@ -87,6 +87,14 @@ func TestPipelineEndToEnd(t *testing.T) {
 	if err != nil || len(facts) != 1 {
 		t.Errorf("graph status fact = %+v (err %v)", facts, err)
 	}
+	// The spec projector recorded the contract...
+	if got, _ := store.SearchFacts("spec hello-feat has requirement 1.1", 5); len(got) != 1 {
+		t.Errorf("expected a HAS_REQ fact from ProjectSpec, got %+v", got)
+	}
+	// ...and the build projector recorded what the iteration produced.
+	if got, _ := store.SearchFacts("hello.txt implements component Greeter", 5); len(got) != 1 {
+		t.Errorf("expected an IMPLEMENTS fact from ProjectBuildUnit, got %+v", got)
+	}
 }
 
 func initGitRepo(t *testing.T, root string) {

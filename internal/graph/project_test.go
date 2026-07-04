@@ -128,6 +128,44 @@ func TestProjectSpec(t *testing.T) {
 	}
 }
 
+func TestProjectBuildUnit(t *testing.T) {
+	s := openTestStore(t)
+	// Spec tier first, so the build tier links to the same nodes.
+	if err := ProjectSpec(s, SpecProjection{
+		FeatID: "tile-map", Requirements: []string{"1.1"}, Components: []string{"Renderer"},
+		Traces: []ReqTrace{{"Renderer", "1.1"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	unit := BuildUnit{
+		FeatID: "tile-map", Component: "Renderer", Requirements: []string{"1.1"},
+		ImplFiles: []string{"src/renderer.go"}, TestFiles: []string{"src/renderer_test.go"},
+	}
+	if err := ProjectBuildUnit(s, unit); err != nil {
+		t.Fatal(err)
+	}
+	if err := ProjectBuildUnit(s, unit); err != nil { // idempotent
+		t.Fatal(err)
+	}
+
+	if got, _ := s.SearchFacts("implements component Renderer", 5); len(got) != 1 {
+		t.Errorf("IMPLEMENTS facts = %+v, want 1", got)
+	}
+	if got, _ := s.SearchFacts("verifies requirement tile-map/1.1", 5); len(got) != 1 {
+		t.Errorf("VERIFIES facts = %+v, want 1", got)
+	}
+
+	// The file/test nodes reuse the shared Renderer component (no duplicate).
+	kinds := map[string]int{}
+	ents, _ := s.Entities()
+	for _, e := range ents {
+		kinds[e.Kind]++
+	}
+	if kinds[KindComponent] != 1 || kinds[KindFile] != 1 || kinds[KindTest] != 1 {
+		t.Fatalf("entity kinds = %v (want comp1 file1 test1)", kinds)
+	}
+}
+
 func TestExportMermaidAndDOT(t *testing.T) {
 	s := openTestStore(t)
 	if err := ProjectPRD(s, testPRD()); err != nil {

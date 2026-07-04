@@ -146,6 +146,67 @@ func ProjectSpec(s *Store, in SpecProjection) error {
 	return nil
 }
 
+// BuildUnit is what one gate-passed build iteration produced, for projection
+// into the graph's file/test tier.
+type BuildUnit struct {
+	FeatID       string
+	Component    string   // the unit's boundary (may be empty)
+	Requirements []string // spec-local requirement IDs the unit traces to
+	ImplFiles    []string // non-test files changed
+	TestFiles    []string // test files changed
+}
+
+// ProjectBuildUnit records what a build iteration produced: implementation files
+// IMPLEMENT the unit's component, test files VERIFY its requirements. This is the
+// build tier of the living documentation graph and links back to the
+// component/requirement nodes ProjectSpec created (same names + featID/req
+// namespacing). Idempotent. Nodes with no edge to draw (missing component or
+// requirements) are skipped, so the graph never accretes disconnected nodes.
+func ProjectBuildUnit(s *Store, in BuildUnit) error {
+	if in.FeatID == "" {
+		return fmt.Errorf("feat id is required")
+	}
+	if in.Component != "" && len(in.ImplFiles) > 0 {
+		comp, err := s.UpsertEntity(KindComponent, in.Component)
+		if err != nil {
+			return err
+		}
+		for _, f := range in.ImplFiles {
+			fn, err := s.UpsertEntity(KindFile, f)
+			if err != nil {
+				return err
+			}
+			if _, err := s.AddFact(FactInput{
+				Src: fn.UUID, Dst: comp.UUID, Rel: RelImplements,
+				Fact: fmt.Sprintf("file %s implements component %s", f, in.Component),
+			}); err != nil {
+				return err
+			}
+		}
+	}
+	if len(in.Requirements) > 0 {
+		for _, tf := range in.TestFiles {
+			tn, err := s.UpsertEntity(KindTest, tf)
+			if err != nil {
+				return err
+			}
+			for _, r := range in.Requirements {
+				rn, err := s.UpsertEntity(KindRequirement, in.FeatID+"/"+r)
+				if err != nil {
+					return err
+				}
+				if _, err := s.AddFact(FactInput{
+					Src: tn.UUID, Dst: rn.UUID, Rel: RelVerifies,
+					Fact: fmt.Sprintf("test %s verifies requirement %s/%s", tf, in.FeatID, r),
+				}); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // setStatus records "feat X has status S" as a temporal fact, superseding the
 // previous status fact when the status changed.
 func (s *Store) setStatus(n Entity, f *program.Feat) error {

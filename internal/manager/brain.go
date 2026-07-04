@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/protonspy/ralph-loop/internal/graph"
+	"github.com/protonspy/ralph-loop/internal/loop"
 	"github.com/protonspy/ralph-loop/internal/program"
 	"github.com/protonspy/ralph-loop/internal/spec"
 	"github.com/protonspy/ralph-loop/internal/tool"
@@ -146,6 +147,79 @@ func projectSpecGraph(o Options, p *program.PRD, feat *program.Feat) error {
 	}
 	defer store.Close()
 	return graph.ProjectSpec(store, specProjection(feat.ID, s))
+}
+
+// projectBuildUnit records what one gate-passed build iteration produced into
+// the graph: impl files IMPLEMENT the unit's component, test files VERIFY its
+// requirements. Best-effort — the graph is documentation, not a gate.
+func projectBuildUnit(o Options, p *program.PRD, feat *program.Feat, u loop.UnitResult) {
+	comp := unitComponent(u.Tasks)
+	reqs := unitRequirements(u.Tasks)
+	var impl, tests []string
+	for _, f := range u.Files {
+		if strings.HasPrefix(f, feat.Spec) {
+			continue // contract artifacts (e.g. the tasks.md checkbox tick), not code
+		}
+		if isTestFile(f) {
+			tests = append(tests, f)
+		} else {
+			impl = append(impl, f)
+		}
+	}
+	if comp == "" && len(reqs) == 0 {
+		return // nothing to link
+	}
+	store, err := graph.Open(graph.DBPath(o.Root), p.Program)
+	if err != nil {
+		fmt.Fprintf(o.Out, "  ⚠ graph build projection: %v\n", err)
+		return
+	}
+	defer store.Close()
+	if err := graph.ProjectBuildUnit(store, graph.BuildUnit{
+		FeatID: feat.ID, Component: comp, Requirements: reqs, ImplFiles: impl, TestFiles: tests,
+	}); err != nil {
+		fmt.Fprintf(o.Out, "  ⚠ graph build projection: %v\n", err)
+	}
+}
+
+func unitComponent(tasks []*spec.Task) string {
+	for _, t := range tasks {
+		if t.Boundary != "" {
+			return t.Boundary
+		}
+	}
+	return ""
+}
+
+func unitRequirements(tasks []*spec.Task) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, t := range tasks {
+		for _, r := range t.Requirements {
+			if !seen[r] {
+				seen[r] = true
+				out = append(out, r)
+			}
+		}
+	}
+	return out
+}
+
+// isTestFile classifies a changed path as a test via cross-language conventions.
+func isTestFile(path string) bool {
+	lp := strings.ToLower(path)
+	b := strings.ToLower(filepath.Base(path))
+	switch {
+	case strings.HasSuffix(b, "_test.go"),
+		strings.Contains(b, ".test."),
+		strings.Contains(b, ".spec."),
+		strings.HasPrefix(b, "test_"),
+		strings.Contains(lp, "/tests/"),
+		strings.Contains(lp, "/test/"),
+		strings.Contains(lp, "__tests__"):
+		return true
+	}
+	return false
 }
 
 // specProjection extracts the graph-projectable slice of a parsed spec: the
