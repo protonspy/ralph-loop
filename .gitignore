@@ -30,3 +30,12 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# ralph-loop runtime state (prd.json, progress.md, graph.db, mcp configs)
+.ralph/
+*.db
+
+# local editors / build
+.idea/
+.vscode/
+/rl
