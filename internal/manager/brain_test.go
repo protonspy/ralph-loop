@@ -35,6 +35,7 @@ func TestWriteMCPConfig(t *testing.T) {
 	}
 	var cfg struct {
 		MCPServers map[string]struct {
+			Type    string   `json:"type"`
 			Command string   `json:"command"`
 			Args    []string `json:"args"`
 		} `json:"mcpServers"`
@@ -49,6 +50,10 @@ func TestWriteMCPConfig(t *testing.T) {
 	g, ok := cfg.MCPServers["graph"]
 	if !ok {
 		t.Fatalf("config missing graph server: %s", raw)
+	}
+	// Claude Code requires the stdio type on a command-based server.
+	if g.Type != "stdio" {
+		t.Errorf("graph server type = %q, want stdio", g.Type)
 	}
 	if len(g.Args) != 4 || g.Args[0] != "graph" || g.Args[1] != "mcp" || g.Args[3] != root {
 		t.Errorf("graph server args = %v", g.Args)

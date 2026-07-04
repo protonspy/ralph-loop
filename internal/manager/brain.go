@@ -29,8 +29,13 @@ func writeMCPConfig(root string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("locate rl binary for graph MCP: %w", err)
 	}
+	// Claude Code's MCP config shape for a stdio server: {type, command, args}.
 	servers := map[string]any{
-		"graph": map[string]any{"command": exe, "args": []string{"graph", "mcp", "--root", root}},
+		"graph": map[string]any{
+			"type":    "stdio",
+			"command": exe,
+			"args":    []string{"graph", "mcp", "--root", root},
+		},
 	}
 	raw, err := json.MarshalIndent(map[string]any{"mcpServers": servers}, "", "  ")
 	if err != nil {

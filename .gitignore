@@ -43,3 +43,6 @@ go.work.sum
 # local test workspaces (never commit run artifacts into this repo)
 /test1/
 /test*/
+
+# cloned csdd source (for analysis; not part of this repo)
+/csdd/
