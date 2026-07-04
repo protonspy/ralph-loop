@@ -10,8 +10,8 @@ import (
 
 // buildPrompt renders the instruction for one fresh-context iteration. It scopes
 // the AI to exactly one behavior (a RED+GREEN pair or a single leaf), points it
-// at the csdd contract artifacts, and tells it to use the MCP context layer
-// (context-mode / Context7) for precise domain context instead of guessing.
+// at the csdd contract artifacts, and tells it to use the graph MCP for prior
+// learnings instead of guessing.
 //
 // Per the chosen methodology the AI owns the checkbox flip and the commit; the
 // driver verifies the gate afterwards and reverts on failure.
@@ -54,12 +54,10 @@ func buildPrompt(s *spec.Spec, unit []*spec.Task) string {
 	}
 	p("Stay strictly inside the declared boundary. Do not start any other task.")
 	p("")
-	p("## Context (use the MCP layer — do not guess APIs)")
-	p("  - Prefer `ctx_search` (context-mode knowledge base) for prior learnings and")
-	p("    indexed domain docs before reading files broadly.")
-	p("  - For third-party library/API usage, pull authoritative docs via Context7")
-	p("    (`ctx_fetch_and_index` / resolve-library-id + get-library-docs) and index them.")
-	p("  - For UI behavior, verify with Playwright.")
+	p("## Knowledge graph (MCP server \"graph\")")
+	p("  - Before coding, search it (mcp__graph__search_facts / search_nodes) for prior")
+	p("    learnings and decisions on this component; reuse instead of guessing.")
+	p("  - When you hit a durable gotcha, record it (add_episode then add_fact).")
 	p("")
 	p("## Definition of done for THIS iteration")
 	p("  1. The scoped test(s) pass and the full suite is green (no regressions).")

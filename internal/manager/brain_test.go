@@ -3,7 +3,6 @@ package manager
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -25,37 +24,33 @@ func testProgram() (*program.PRD, *program.Feat) {
 
 func TestWriteMCPConfig(t *testing.T) {
 	root := t.TempDir()
-	for _, playwright := range []bool{false, true} {
-		path, err := writeMCPConfig(root, playwright, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var cfg struct {
-			MCPServers map[string]struct {
-				Command string   `json:"command"`
-				Args    []string `json:"args"`
-			} `json:"mcpServers"`
-		}
-		if err := json.Unmarshal(raw, &cfg); err != nil {
-			t.Fatalf("config is not valid JSON: %v\n%s", err, raw)
-		}
-		g, ok := cfg.MCPServers["graph"]
-		if !ok {
-			t.Fatalf("config missing graph server: %s", raw)
-		}
-		if len(g.Args) != 4 || g.Args[0] != "graph" || g.Args[1] != "mcp" || g.Args[3] != root {
-			t.Errorf("graph server args = %v", g.Args)
-		}
-		if _, ok := cfg.MCPServers["playwright"]; ok != playwright {
-			t.Errorf("playwright present=%v, want %v", ok, playwright)
-		}
+	path, err := writeMCPConfig(root)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if filepath.Dir(program.Dir(t.TempDir())) == "" {
-		t.Fatal("unreachable")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		MCPServers map[string]struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatalf("config is not valid JSON: %v\n%s", err, raw)
+	}
+	// The graph is the ONLY MCP ralph wires — no playwright, no context7.
+	if len(cfg.MCPServers) != 1 {
+		t.Fatalf("want exactly the graph server, got %v", cfg.MCPServers)
+	}
+	g, ok := cfg.MCPServers["graph"]
+	if !ok {
+		t.Fatalf("config missing graph server: %s", raw)
+	}
+	if len(g.Args) != 4 || g.Args[0] != "graph" || g.Args[1] != "mcp" || g.Args[3] != root {
+		t.Errorf("graph server args = %v", g.Args)
 	}
 }
 
@@ -104,7 +99,7 @@ func TestPromptsCarryTheirContracts(t *testing.T) {
 	}
 
 	e2e := e2ePrompt(p, feat)
-	for _, want := range []string{"specs/tile-map/requirements.md", `"passed"`, "Playwright"} {
+	for _, want := range []string{"specs/tile-map/requirements.md", `"passed"`, "Bash"} {
 		if !strings.Contains(e2e, want) {
 			t.Errorf("e2ePrompt missing %q", want)
 		}

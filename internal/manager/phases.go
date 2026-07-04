@@ -138,7 +138,7 @@ type researchOutput struct {
 // into our graph KB, so requirements are grounded, not guessed. The caller
 // treats failure as soft — an unresearched spec is worse, not impossible.
 func phaseResearch(ctx context.Context, o Options, p *program.PRD, feat *program.Feat) error {
-	cfg, err := writeMCPConfig(o.Root, false, o.Context7)
+	cfg, err := writeMCPConfig(o.Root)
 	if err != nil {
 		return err
 	}
@@ -166,8 +166,7 @@ METHOD
 1. Query the graph first (search_facts, neighbors on feat %q) — do not re-research
    what is already indexed.
 2. Research what is missing for THIS feat only: use WebSearch/WebFetch for current
-   library choices, APIs, best practices and known pitfalls (and Context7 tools if
-   available). Prefer authoritative sources.
+   library choices, APIs, best practices and known pitfalls. Prefer authoritative sources.
 3. Index what you learned: one add_episode per source consulted, then 5-15
    add_fact calls — concrete, implementation-relevant facts (library versions,
    API shapes, constraints, pitfalls), each linked to its episode. Use concept/
@@ -197,7 +196,7 @@ var csddPhases = []string{"requirements", "design", "tasks"}
 func phaseSpecUp(ctx context.Context, o Options, p *program.PRD, feat *program.Feat) error {
 	logf := func(format string, a ...any) { fmt.Fprintf(o.Out, format+"\n", a...) }
 	retries := max(o.MaxRetry, 1)
-	cfg, err := writeMCPConfig(o.Root, false, o.Context7)
+	cfg, err := writeMCPConfig(o.Root)
 	if err != nil {
 		return err
 	}
@@ -299,7 +298,7 @@ type reviewVerdict struct {
 // sibling feats, the knowledge graph — not just mechanical validity. csdd's
 // mechanical gate runs separately on approve.
 func reviewSpec(ctx context.Context, o Options, p *program.PRD, feat *program.Feat, phase string) (reviewVerdict, error) {
-	cfg, err := writeMCPConfig(o.Root, false, o.Context7)
+	cfg, err := writeMCPConfig(o.Root)
 	if err != nil {
 		return reviewVerdict{}, err
 	}
@@ -377,10 +376,10 @@ type e2eVerdict struct {
 }
 
 // phaseE2E is the Tier-2 delivery gate: drive the REAL feat (run the app;
-// Playwright as hands/eyes for UI) against the acceptance criteria and judge
+// driving the real app via Bash) against the acceptance criteria and judge
 // pass/fail. Only a pass flips the feat to done.
 func phaseE2E(ctx context.Context, o Options, p *program.PRD, feat *program.Feat) error {
-	cfg, err := writeMCPConfig(o.Root, true, o.Context7)
+	cfg, err := writeMCPConfig(o.Root)
 	if err != nil {
 		return err
 	}
@@ -407,9 +406,8 @@ ACCEPTANCE CRITERIA: %s/requirements.md (read it; judge against it, not vibes).
 
 METHOD
 1. Run the real thing: build/start the application from this workspace.
-2. Exercise THIS feat's behavior end-to-end. For anything with a UI use the
-   Playwright MCP tools (navigate, interact, screenshot); for CLIs/services,
-   drive the real binary/endpoints via Bash.
+2. Exercise THIS feat's behavior end-to-end by driving the real binary, endpoints
+   or files via Bash; observe the actual output.
 3. Judge every acceptance criterion. Unmet criterion or broken core flow = fail.
    Sibling feats' unfinished behavior does NOT fail this feat.
 4. Record the outcome in the knowledge graph: add_episode (source "e2e") with
@@ -442,7 +440,7 @@ func printPlan(o Options, logf func(string, ...any)) error {
 	logf("               context → refine loop on reject → csdd approve (mechanical)")
 	logf("  ③b approve   final latch: csdd validate green + ready_for_implementation")
 	logf("  ④ build      inner loop as --agent implementer: RED+GREEN, gate + git revert")
-	logf("  ⑤ e2e        brain e2e-qa + Playwright MCP → verdict JSON → feat done")
+	logf("  ⑤ e2e        brain drives the real app via Bash → verdict JSON → feat done")
 	logf("")
 	logf("No human in the loop; the human receives only the final delivered program.")
 

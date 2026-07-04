@@ -19,25 +19,18 @@ import (
 // MCP wiring (which organs a given activation gets) and the JSON activation
 // helper every brain phase goes through.
 
-// writeMCPConfig materializes an --mcp-config file under .ralph/ giving the
-// activation our graph KB (served by this same rl binary over stdio), optionally
-// Context7 (authoritative library docs) and, for E2E, Playwright as hands/eyes.
-// Rewritten every time: the rl path or root may change between runs.
-func writeMCPConfig(root string, playwright bool, context7 string) (string, error) {
+// writeMCPConfig materializes an --mcp-config file under .ralph/ wiring the graph
+// KB — ralph-loop's OWN native MCP (served by this same rl binary over stdio),
+// which needs no external setup. The graph is the ONLY MCP ralph wires; anything
+// carrying its own setup cost (Context7's token, Playwright's browser deps) is
+// deliberately left out.
+func writeMCPConfig(root string) (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("locate rl binary for graph MCP: %w", err)
 	}
 	servers := map[string]any{
 		"graph": map[string]any{"command": exe, "args": []string{"graph", "mcp", "--root", root}},
-	}
-	name := "mcp-graph.json"
-	if playwright {
-		servers["playwright"] = map[string]any{"command": "npx", "args": []string{"-y", "@playwright/mcp@latest"}}
-		name = "mcp-e2e.json"
-	}
-	if fields := strings.Fields(context7); len(fields) > 0 {
-		servers["context7"] = map[string]any{"command": fields[0], "args": fields[1:]}
 	}
 	raw, err := json.MarshalIndent(map[string]any{"mcpServers": servers}, "", "  ")
 	if err != nil {
@@ -46,7 +39,7 @@ func writeMCPConfig(root string, playwright bool, context7 string) (string, erro
 	if err := os.MkdirAll(program.Dir(root), 0o755); err != nil {
 		return "", err
 	}
-	path := filepath.Join(program.Dir(root), name)
+	path := filepath.Join(program.Dir(root), "mcp-graph.json")
 	if err := os.WriteFile(path, raw, 0o644); err != nil {
 		return "", err
 	}

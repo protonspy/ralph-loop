@@ -27,7 +27,6 @@ type Options struct {
 	Challenge   string        // the natural-language challenge (empty ⇒ resume existing program)
 	Tool        tool.Runner   // AI tool for brain activations + inner loop
 	Csdd        gate.Resolver // how to invoke csdd (gate + factory)
-	Context7    string        // optional MCP command for Context7 docs (empty = disabled)
 	MaxIter  int // inner loop max iterations per feat
 	MaxRetry int // inner loop retries per unit
 	DryRun   bool // print the end-to-end plan; mutate nothing, spawn nothing
@@ -183,7 +182,7 @@ func driveFeat(ctx context.Context, o Options, p *program.PRD, feat *program.Fea
 // gate-passed iteration into the living documentation graph (file→component
 // IMPLEMENTS, test→requirement VERIFIES).
 func phaseBuild(ctx context.Context, o Options, p *program.PRD, feat *program.Feat) error {
-	cfg, err := writeMCPConfig(o.Root, false, o.Context7)
+	cfg, err := writeMCPConfig(o.Root)
 	if err != nil {
 		return err
 	}

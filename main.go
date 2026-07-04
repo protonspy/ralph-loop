@@ -61,7 +61,6 @@ RUN FLAGS
   --retry N        Consecutive gate failures on one unit before stopping (default 3).
   --tool NAME      AI tool: claude (default) or amp.
   --csdd CMD       How to invoke csdd (default "csdd"; e.g. "npx -y @protonspy/csdd").
-  --context7 CMD   Optional Context7 MCP command for authoritative library docs.
   --root PATH      Workspace root (default: cwd for a challenge; inferred for a spec-dir).
   --dry-run        Print the end-to-end plan; mutate nothing, spawn nothing.`)
 }
@@ -75,7 +74,6 @@ func cmdRun(args []string) int {
 	retry := fs.Int("retry", 3, "consecutive gate failures on one unit before stopping")
 	toolName := fs.String("tool", "claude", "AI tool: claude|amp")
 	csddCmd := fs.String("csdd", "csdd", "how to invoke csdd")
-	context7 := fs.String("context7", "", `optional Context7 MCP command, e.g. "npx -y @upstash/context7-mcp"`)
 	root := fs.String("root", "", "workspace root")
 	dryRun := fs.Bool("dry-run", false, "plan only; spawn nothing")
 
@@ -126,7 +124,7 @@ func cmdRun(args []string) int {
 			wsRoot = abs
 		}
 		err = manager.Run(ctx, manager.Options{
-			Root: wsRoot, Challenge: challenge, Tool: tl, Csdd: csdd, Context7: *context7,
+			Root: wsRoot, Challenge: challenge, Tool: tl, Csdd: csdd,
 			MaxIter: *max, MaxRetry: *retry, DryRun: *dryRun, Out: os.Stdout,
 		})
 	}
