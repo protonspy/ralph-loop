@@ -481,6 +481,7 @@ func printPlan(o Options, logf func(string, ...any)) error {
 	logf("  program: %s   branch: ralph/%s   state: .ralph/prd.json + .ralph/progress.md", slug, slug)
 	logf("")
 	logf("FRONT (once):")
+	logf("  ⓪ init       csdd init --exclude agents,skills (fresh workspace; CLAUDE.md fallback)")
 	logf("  ⓪ staff      brain → roster JSON → csdd agent/skill create (soft-fails)")
 	logf("  ① decompose  brain → PRD + feats+deps → .ralph/prd.json → graph")
 	logf("")

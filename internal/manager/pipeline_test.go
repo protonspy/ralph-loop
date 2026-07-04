@@ -68,6 +68,10 @@ func TestPipelineEndToEnd(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "hello.txt")); err != nil {
 		t.Error("build iteration did not produce hello.txt")
 	}
+	// csdd init ran (fake is a no-op) and the CLAUDE.md fallback was seeded.
+	if _, err := os.Stat(filepath.Join(root, "CLAUDE.md")); err != nil {
+		t.Error("CLAUDE.md convention layer was not created")
+	}
 
 	// Progress log carries research, staffing and E2E evidence.
 	progress, _ := os.ReadFile(program.ProgressPath(root))
@@ -183,6 +187,7 @@ while [ $# -gt 0 ]; do
 done
 cd "$rootdir"
 case "$sub" in
+  init*|"init") : ;;
   "spec approve")
     if [ "$phase" = "tasks" ]; then
       spec="specs/$feat/spec.json"

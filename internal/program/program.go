@@ -115,12 +115,6 @@ func Bootstrap(root, challenge string) (*PRD, error) {
 	if err := os.WriteFile(filepath.Join(Dir(root), ".gitignore"), []byte("*\n"), 0o644); err != nil {
 		return nil, err
 	}
-	// Seed CLAUDE.md with the durable, cross-cutting conventions every brain
-	// activation (build loop AND csdd spec work) inherits. Never clobber a
-	// hand-written one.
-	if err := writeClaudeMD(root); err != nil {
-		return nil, err
-	}
 	return p, nil
 }
 
@@ -149,10 +143,14 @@ func WritePRDDoc(root string, p *PRD, summary string) (string, error) {
 	return filepath.Join(".ralph", "prd.md"), nil
 }
 
-func writeClaudeMD(root string) error {
+// EnsureCLAUDEMD writes a fallback CLAUDE.md holding ralph-loop's durable,
+// cross-cutting conventions — but only if one does not already exist. Since
+// `csdd init` now owns a consolidated CLAUDE.md (csdd PR #38, which also removed
+// csdd.md), this is the fallback for when csdd init was unavailable or skipped.
+func EnsureCLAUDEMD(root string) error {
 	path := filepath.Join(root, "CLAUDE.md")
 	if _, err := os.Stat(path); err == nil {
-		return nil // respect an existing CLAUDE.md
+		return nil // csdd (or a human) already provided one
 	}
 	return os.WriteFile(path, []byte(claudeMD), 0o644)
 }
