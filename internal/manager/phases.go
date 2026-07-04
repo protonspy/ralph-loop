@@ -144,14 +144,14 @@ func phaseResearch(ctx context.Context, o Options, p *program.PRD, feat *program
 	}
 	agent := pickAgent(p.Team, "research", "analyst", "scout")
 	var out researchOutput
-	if err := brainJSON(ctx, o, researchPrompt(p, feat), &out, brainArgs(cfg, agent)...); err != nil {
+	if err := brainJSON(ctx, o, researchPrompt(p, feat, mcpGuidance(o.Root)), &out, brainArgs(cfg, agent)...); err != nil {
 		return err
 	}
 	return program.AppendProgress(o.Root, feat.ID+" — research",
 		fmt.Sprintf("%s\n\n(%d facts indexed into the graph KB)", out.Summary, out.FactsIndexed))
 }
 
-func researchPrompt(p *program.PRD, feat *program.Feat) string {
+func researchPrompt(p *program.PRD, feat *program.Feat, guidance string) string {
 	return fmt.Sprintf(`You are the researcher of an autonomous delivery pipeline, with a FRESH context.
 Your job: gather the domain knowledge needed to specify ONE feat well, and index
 it into the knowledge graph so later phases (spec authoring, implementation)
@@ -176,7 +176,7 @@ METHOD
 Respond with ONLY this JSON, no prose, no code fences:
 {"summary": "<4-8 sentences: what you learned that shapes this feat's spec>",
  "facts_indexed": <number of add_fact calls that succeeded>}`,
-		programContext(p, feat), feat.ID, feat.Title, graphToolsHint, feat.ID, feat.ID)
+		programContext(p, feat), feat.ID, feat.Title, guidance, feat.ID, feat.ID)
 }
 
 // ---- ③ spec-up (author + review + approve, per csdd phase) ----
@@ -201,13 +201,14 @@ func phaseSpecUp(ctx context.Context, o Options, p *program.PRD, feat *program.F
 		return err
 	}
 	lead := pickAgent(p.Team, "lead", "architect", "tech", "planner")
+	guidance := mcpGuidance(o.Root)
 
 	for _, phase := range csddPhases {
 		feedback := ""
 		approved := false
 		for attempt := 1; attempt <= retries && !approved; attempt++ {
 			logf("     %s: authoring (attempt %d/%d) …", phase, attempt, retries)
-			if _, err := o.Tool.Run(ctx, o.Root, authorPrompt(o, p, feat, phase, feedback), brainArgs(cfg, lead)...); err != nil {
+			if _, err := o.Tool.Run(ctx, o.Root, authorPrompt(o, p, feat, phase, feedback, guidance), brainArgs(cfg, lead)...); err != nil {
 				logf("     tool exited with error: %v (continuing to review)", err)
 			}
 
@@ -240,7 +241,7 @@ func phaseSpecUp(ctx context.Context, o Options, p *program.PRD, feat *program.F
 }
 
 // authorPrompt scopes one authoring activation to exactly one contract phase.
-func authorPrompt(o Options, p *program.PRD, feat *program.Feat, phase, feedback string) string {
+func authorPrompt(o Options, p *program.PRD, feat *program.Feat, phase, feedback, guidance string) string {
 	var b strings.Builder
 	pr := func(format string, a ...any) { fmt.Fprintf(&b, format+"\n", a...) }
 
@@ -252,7 +253,7 @@ func authorPrompt(o Options, p *program.PRD, feat *program.Feat, phase, feedback
 	pr("FEAT: %s — %s     SPEC DIR: %s", feat.ID, feat.Title, feat.Spec)
 	pr("csdd is invoked as: %s", o.Csdd.Command())
 	pr("")
-	pr("%s", graphToolsHint)
+	pr("%s", guidance)
 	pr("")
 	pr("STEPS")
 	pr("1. Read .ralph/progress.md (this feat's research summary) and query the graph")
@@ -304,7 +305,7 @@ func reviewSpec(ctx context.Context, o Options, p *program.PRD, feat *program.Fe
 	}
 	agent := pickAgent(p.Team, "review", "critic", "qa")
 	var v reviewVerdict
-	if err := brainJSON(ctx, o, reviewPrompt(p, feat, phase), &v, brainArgs(cfg, agent)...); err != nil {
+	if err := brainJSON(ctx, o, reviewPrompt(p, feat, phase, mcpGuidance(o.Root)), &v, brainArgs(cfg, agent)...); err != nil {
 		return reviewVerdict{}, err
 	}
 	if !v.Approve && len(v.Reasons) == 0 {
@@ -313,7 +314,7 @@ func reviewSpec(ctx context.Context, o Options, p *program.PRD, feat *program.Fe
 	return v, nil
 }
 
-func reviewPrompt(p *program.PRD, feat *program.Feat, phase string) string {
+func reviewPrompt(p *program.PRD, feat *program.Feat, phase, guidance string) string {
 	return fmt.Sprintf(`You are the adversarial spec reviewer of an autonomous delivery pipeline —
 the judgment a human approver would apply, made yours. FRESH context.
 
@@ -336,7 +337,7 @@ fixable reasons otherwise.
 
 Respond with ONLY this JSON, no prose, no code fences:
 {"approve": true|false, "reasons": ["<specific reason>", ...]}`,
-		programContext(p, feat), phase, feat.ID, feat.Spec, artifactFile(phase), graphToolsHint)
+		programContext(p, feat), phase, feat.ID, feat.Spec, artifactFile(phase), guidance)
 }
 
 func artifactFile(phase string) string {

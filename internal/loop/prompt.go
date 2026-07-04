@@ -54,11 +54,6 @@ func buildPrompt(s *spec.Spec, unit []*spec.Task) string {
 	}
 	p("Stay strictly inside the declared boundary. Do not start any other task.")
 	p("")
-	p("## Knowledge graph (MCP server \"graph\")")
-	p("  - Before coding, search it (mcp__graph__search_facts / search_nodes) for prior")
-	p("    learnings and decisions on this component; reuse instead of guessing.")
-	p("  - When you hit a durable gotcha, record it (add_episode then add_fact).")
-	p("")
 	p("## Definition of done for THIS iteration")
 	p("  1. The scoped test(s) pass and the full suite is green (no regressions).")
 	p("  2. Check the box(es) for EXACTLY these task IDs in tasks.md: [ ] -> [x].")

@@ -26,6 +26,7 @@ type Options struct {
 	DryRun   bool          // plan only: print prompts, never spawn/commit
 	Out      io.Writer     // progress sink (defaults handled by caller)
 	ToolArgs []string         // extra flags for each iteration's tool.Run (e.g. --mcp-config, --agent)
+	Guidance string           // optional MCP guidance appended to each iteration's prompt
 	OnUnit   func(UnitResult) // optional: called after a unit passes the gate (observational)
 }
 
@@ -71,6 +72,9 @@ func Run(ctx context.Context, o Options) error {
 		ids := UnitIDs(unit)
 		logf("── iteration %d/%d — task(s) %v: %s", iter, o.Max, ids, unit[len(unit)-1].Title)
 		prompt := buildPrompt(s, unit)
+		if o.Guidance != "" {
+			prompt += "\n" + o.Guidance
+		}
 
 		if o.DryRun {
 			logf("[dry-run] would spawn %q with this prompt:\n%s", toolName(o.Tool), indentBlock(prompt))

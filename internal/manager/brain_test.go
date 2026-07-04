@@ -3,6 +3,7 @@ package manager
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -68,7 +69,7 @@ func TestPromptsCarryTheirContracts(t *testing.T) {
 	p, feat := testProgram()
 	o := Options{Csdd: gate.Resolver{"npx", "-y", "@protonspy/csdd"}}
 
-	author := authorPrompt(o, p, feat, "requirements", "fix the acceptance criteria")
+	author := authorPrompt(o, p, feat, "requirements", "fix the acceptance criteria", graphToolsHint)
 	for _, want := range []string{
 		"npx -y @protonspy/csdd spec init tile-map",
 		"specs/tile-map/requirements.md",
@@ -81,7 +82,7 @@ func TestPromptsCarryTheirContracts(t *testing.T) {
 			t.Errorf("authorPrompt(requirements) missing %q", want)
 		}
 	}
-	tasks := authorPrompt(o, p, feat, "tasks", "")
+	tasks := authorPrompt(o, p, feat, "tasks", "", graphToolsHint)
 	for _, want := range []string{"--artifact tasks", "RED/GREEN", "E2E task"} {
 		if !strings.Contains(tasks, want) {
 			t.Errorf("authorPrompt(tasks) missing %q", want)
@@ -91,7 +92,7 @@ func TestPromptsCarryTheirContracts(t *testing.T) {
 		t.Error("authorPrompt without feedback must not carry a feedback section")
 	}
 
-	review := reviewPrompt(p, feat, "design")
+	review := reviewPrompt(p, feat, "design", graphToolsHint)
 	for _, want := range []string{"specs/tile-map/design.md", `"approve"`, "general context", "scope creep"} {
 		if !strings.Contains(strings.ToLower(review), strings.ToLower(want)) {
 			t.Errorf("reviewPrompt missing %q", want)
@@ -103,6 +104,31 @@ func TestPromptsCarryTheirContracts(t *testing.T) {
 		if !strings.Contains(e2e, want) {
 			t.Errorf("e2ePrompt missing %q", want)
 		}
+	}
+}
+
+func TestMCPGuidanceValidatesContext7(t *testing.T) {
+	root := t.TempDir()
+
+	// No .mcp.json → graph only, no context7 mention.
+	g := mcpGuidance(root)
+	if !strings.Contains(g, "graph") {
+		t.Error("guidance should always describe the native graph MCP")
+	}
+	if strings.Contains(g, "context7") {
+		t.Errorf("context7 must not be mentioned when absent from .mcp.json:\n%s", g)
+	}
+
+	// User configured context7 in .mcp.json → it is validated in and described.
+	cfg := `{"mcpServers":{"context7":{"type":"http","url":"https://mcp.upstash.com/context7"}}}`
+	if err := os.WriteFile(filepath.Join(root, ".mcp.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !mcpConfigured(root, "context7") {
+		t.Fatal("mcpConfigured should detect context7 in .mcp.json")
+	}
+	if g := mcpGuidance(root); !strings.Contains(g, "context7") {
+		t.Errorf("guidance should describe context7 once configured:\n%s", g)
 	}
 }
 

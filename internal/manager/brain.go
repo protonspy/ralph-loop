@@ -46,6 +46,36 @@ func writeMCPConfig(root string) (string, error) {
 	return path, nil
 }
 
+// mcpGuidance describes the MCP servers a brain activation can use: the native
+// graph (always wired) plus any recognized OPTIONAL server the user configured
+// in .mcp.json. ralph only VALIDATES presence here — it never installs MCPs
+// (that is the user's job via `csdd mcp add`/`enable`), and the prompt mentions
+// only what is actually available.
+func mcpGuidance(root string) string {
+	hints := []string{graphToolsHint}
+	if mcpConfigured(root, "context7") {
+		hints = append(hints, context7Hint)
+	}
+	return strings.Join(hints, "\n\n")
+}
+
+// mcpConfigured reports whether a server named `name` is present in the
+// workspace's .mcp.json (the user's MCP config, managed via `csdd mcp`).
+func mcpConfigured(root, name string) bool {
+	raw, err := os.ReadFile(filepath.Join(root, ".mcp.json"))
+	if err != nil {
+		return false
+	}
+	var parsed struct {
+		MCPServers map[string]json.RawMessage `json:"mcpServers"`
+	}
+	if json.Unmarshal(raw, &parsed) != nil {
+		return false
+	}
+	_, ok := parsed.MCPServers[name]
+	return ok
+}
+
 // brainArgs assembles the common activation flags: the graph/E2E MCP config and,
 // when a bespoke specialist was staffed for the role, --agent to activate it.
 func brainArgs(cfg, agent string) []string {
@@ -111,6 +141,11 @@ const graphToolsHint = `KNOWLEDGE GRAPH (MCP server "graph" — the project's li
     then mcp__graph__add_fact (src/dst as kind+name, one sentence per fact,
     episode = the uuid you got). If a fact contradicts an existing one, pass its
     uuid in supersedes — never assume deletion.`
+
+// context7Hint is added ONLY when the user configured context7 in .mcp.json.
+const context7Hint = `LIBRARY DOCS (MCP server "context7" — the user configured it in .mcp.json):
+  - Fetch authoritative, version-correct library/API documentation via context7
+    before relying on an API, instead of guessing from memory.`
 
 // projectGraph refreshes the living documentation graph from the program state.
 // Best-effort by design: the graph is documentation, not a gate.

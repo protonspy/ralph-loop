@@ -196,6 +196,7 @@ func phaseBuild(ctx context.Context, o Options, p *program.PRD, feat *program.Fe
 		MaxRetry: o.MaxRetry,
 		Out:      o.Out,
 		ToolArgs: brainArgs(cfg, agent),
+		Guidance: mcpGuidance(o.Root),
 		OnUnit:   func(u loop.UnitResult) { projectBuildUnit(o, p, feat, u) },
 	})
 }
