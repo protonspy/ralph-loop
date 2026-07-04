@@ -178,10 +178,16 @@ func driveFeat(ctx context.Context, o Options, p *program.PRD, feat *program.Fea
 	return program.AppendProgress(o.Root, feat.ID+" — done", "Built to csdd contract and E2E-accepted.")
 }
 
-// phaseBuild runs the inner loop over the feat's csdd spec. OnUnit projects
-// each gate-passed iteration into the living documentation graph (file→component
+// phaseBuild runs the inner loop over the feat's csdd spec, driven by the
+// `implementer` agent with the graph MCP wired in. OnUnit projects each
+// gate-passed iteration into the living documentation graph (file→component
 // IMPLEMENTS, test→requirement VERIFIES).
 func phaseBuild(ctx context.Context, o Options, p *program.PRD, feat *program.Feat) error {
+	cfg, err := writeMCPConfig(o.Root, false, o.Context7)
+	if err != nil {
+		return err
+	}
+	agent := pickAgent(p.Team, "implement", "developer", "coder")
 	return loop.Run(ctx, loop.Options{
 		Root:     o.Root,
 		SpecDir:  filepath.Join(o.Root, feat.Spec),
@@ -190,6 +196,7 @@ func phaseBuild(ctx context.Context, o Options, p *program.PRD, feat *program.Fe
 		Max:      o.MaxIter,
 		MaxRetry: o.MaxRetry,
 		Out:      o.Out,
+		ToolArgs: brainArgs(cfg, agent),
 		OnUnit:   func(u loop.UnitResult) { projectBuildUnit(o, p, feat, u) },
 	})
 }

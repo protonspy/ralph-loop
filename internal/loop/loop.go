@@ -25,6 +25,7 @@ type Options struct {
 	MaxRetry int           // consecutive failures on the same unit before giving up
 	DryRun   bool          // plan only: print prompts, never spawn/commit
 	Out      io.Writer     // progress sink (defaults handled by caller)
+	ToolArgs []string         // extra flags for each iteration's tool.Run (e.g. --mcp-config, --agent)
 	OnUnit   func(UnitResult) // optional: called after a unit passes the gate (observational)
 }
 
@@ -83,7 +84,7 @@ func Run(ctx context.Context, o Options) error {
 			return fmt.Errorf("git snapshot: %w", err)
 		}
 
-		if _, err := o.Tool.Run(ctx, o.Root, prompt); err != nil {
+		if _, err := o.Tool.Run(ctx, o.Root, prompt, o.ToolArgs...); err != nil {
 			logf("  tool exited with error: %v (continuing to gate)", err)
 		}
 

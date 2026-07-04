@@ -109,11 +109,14 @@ func TestPromptsCarryTheirContracts(t *testing.T) {
 			t.Errorf("e2ePrompt missing %q", want)
 		}
 	}
+}
 
-	staff := staffPrompt(p.Challenge)
-	for _, want := range []string{"fazer um jogo estilo wow", "e2e-qa", `"agents"`} {
-		if !strings.Contains(staff, want) {
-			t.Errorf("staffPrompt missing %q", want)
-		}
+func TestPickAgentMatchesImplementer(t *testing.T) {
+	team := []string{"implementer", "code-reviewer", "security-reviewer"}
+	if got := pickAgent(team, "implement", "developer", "coder"); got != "implementer" {
+		t.Errorf("build activation = %q, want implementer", got)
+	}
+	if got := pickAgent(team, "research", "analyst"); got != "" {
+		t.Errorf("research should fall back to the default brain, got %q", got)
 	}
 }

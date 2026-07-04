@@ -23,30 +23,23 @@ import (
 
 // ---- ⓪ staff ----
 
-// rosterOutput is the staffing brain's pick of which csdd-library AGENTS the
-// pipeline needs — artifact paths to copy, e.g. "agents/e2e-qa".
-type rosterOutput struct {
-	Agents []string `json:"agents"`
+// staffedAgents is the FIXED set of csdd-library agents ralph-loop brings in:
+// the implementer (drives the build loop) plus csdd's built-in code and security
+// reviewers. No brain decision, no default scaffold — just copy exactly these.
+// Paths are `agents/<name>` (no extension); `csdd copy agents/code-reviewer`
+// materializes .claude/agents/code-reviewer.md.
+var staffedAgents = []string{
+	"agents/implementer",
+	"agents/code-reviewer",
+	"agents/security-reviewer",
 }
 
-// phaseStaff assembles the team by COPYING only the agents the pipeline's flow
-// needs from csdd's curated library (`csdd copy agents/<name>`). ralph-loop does
-// NOT run `csdd init`, scaffold a default team, or author agents from scratch —
-// it pulls in exactly what is necessary. Skills are intentionally not staffed.
+// phaseStaff assembles the team by COPYING the fixed reviewer agents from csdd's
+// curated library (`csdd copy agents/<name>.md`). ralph-loop does NOT run
+// `csdd init`, scaffold a default team, or author agents from scratch.
 func phaseStaff(ctx context.Context, o Options, p *program.PRD) error {
-	var roster rosterOutput
-	if err := brainJSON(ctx, o, staffPrompt(p.Challenge), &roster); err != nil {
-		return err
-	}
-	if len(roster.Agents) == 0 {
-		return fmt.Errorf("staffing returned no agents")
-	}
 	var copied []string
-	for _, path := range roster.Agents {
-		path = strings.Trim(strings.TrimSpace(path), "/")
-		if path == "" {
-			continue
-		}
+	for _, path := range staffedAgents {
 		if res := o.Csdd.RunIn(ctx, o.Root, "copy", path); !res.OK {
 			return fmt.Errorf("csdd copy %s failed (exit %d):\n%s", path, res.ExitCode, res.Output)
 		}
@@ -56,23 +49,6 @@ func phaseStaff(ctx context.Context, o Options, p *program.PRD) error {
 		copied = append(copied, path)
 	}
 	return program.AppendProgress(o.Root, "team staffed", strings.Join(copied, ", "))
-}
-
-func staffPrompt(challenge string) string {
-	return fmt.Sprintf(`You are the staffer of an autonomous software-delivery pipeline. Choose the
-MINIMAL set of agents to COPY from csdd's curated library for this challenge —
-only what the pipeline's agent flow needs (research, spec authoring, review, and
-E2E acceptance), plus at most one domain specialist when the challenge demands it.
-
-CHALLENGE: %s
-
-Rules:
-- Return csdd library artifact PATHS to copy, each of the form "agents/<name>".
-- ALWAYS include an E2E acceptance agent (e.g. "agents/e2e-qa").
-- Reuse curated agents; copy the fewest that cover the flow. Do NOT copy skills.
-
-Respond with ONLY this JSON, no prose, no code fences:
-{"agents":["agents/<name>", ...]}`, challenge)
 }
 
 // ---- ① decompose ----
@@ -457,7 +433,7 @@ func printPlan(o Options, logf func(string, ...any)) error {
 	logf("")
 	logf("FRONT (once):")
 	logf("  ⓪ init       ralph scaffolds .claude/ + CLAUDE.md (NOT csdd init)")
-	logf("  ⓪ staff      brain → agent library paths → csdd copy agents/<name> (soft-fails)")
+	logf("  ⓪ staff      csdd copy agents/{implementer,code-reviewer,security-reviewer} (soft-fails)")
 	logf("  ① decompose  brain → PRD + feats+deps → .ralph/prd.json → graph")
 	logf("")
 	logf("OUTER LOOP (per feat, dependency order):")
@@ -465,7 +441,7 @@ func printPlan(o Options, logf func(string, ...any)) error {
 	logf("  ③ spec-up    per csdd phase: brain authors → reviewer brain judges vs general")
 	logf("               context → refine loop on reject → csdd approve (mechanical)")
 	logf("  ③b approve   final latch: csdd validate green + ready_for_implementation")
-	logf("  ④ build      inner loop: RED+GREEN per task, gate csdd validate + git revert")
+	logf("  ④ build      inner loop as --agent implementer: RED+GREEN, gate + git revert")
 	logf("  ⑤ e2e        brain e2e-qa + Playwright MCP → verdict JSON → feat done")
 	logf("")
 	logf("No human in the loop; the human receives only the final delivered program.")

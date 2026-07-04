@@ -130,8 +130,6 @@ prompt=$(cat)
 emit() { jq -n --arg r "$1" '{type:"result",is_error:false,result:$r}'; }
 
 case "$prompt" in
-  *"You are the staffer"*)
-    emit '{"agents":["agents/e2e-qa"]}' ;;
   *"product architect decomposing"*)
     emit '{"prd_summary":"one hello feat; rest out of scope","feats":[{"id":"hello-feat","title":"Say hello","depends":[]}]}' ;;
   *"You are the researcher"*)
