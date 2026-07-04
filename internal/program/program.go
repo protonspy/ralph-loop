@@ -115,6 +115,16 @@ func Bootstrap(root, challenge string) (*PRD, error) {
 	if err := os.WriteFile(filepath.Join(Dir(root), ".gitignore"), []byte("*\n"), 0o644); err != nil {
 		return nil, err
 	}
+	// ralph-loop scaffolds the workspace ITSELF instead of running `csdd init`:
+	// a .claude/ directory (the anchor csdd uses to recognize a workspace) and a
+	// self-contained CLAUDE.md carrying every durable instruction. Both are
+	// create/write-if-absent, so a user-provided csdd workspace or CLAUDE.md wins.
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+		return nil, err
+	}
+	if err := EnsureCLAUDEMD(root); err != nil {
+		return nil, err
+	}
 	return p, nil
 }
 
@@ -156,30 +166,48 @@ func EnsureCLAUDEMD(root string) error {
 }
 
 // claudeMD is auto-loaded by every `claude` activation (build loop AND csdd
-// spec authoring). It holds ONLY durable, cross-cutting conventions — the
-// project-flow layer. Per-task instructions arrive in each iteration's prompt.
-const claudeMD = `# Project conventions
+// spec authoring). ralph-loop writes it in lieu of `csdd init`, so it must be
+// self-contained: every durable, cross-cutting instruction the brain needs.
+// Per-task direction still arrives in each iteration's prompt.
+const claudeMD = `# CLAUDE.md — project operating instructions
 
-This workspace is built autonomously by ralph-loop: stateless, fresh-context
-iterations over a csdd SDD+TDD contract. This file is the DURABLE, cross-cutting
-convention layer that every Claude activation inherits. Task-specific direction
-arrives in each iteration's prompt — keep that out of here.
+This workspace is built autonomously by **ralph-loop**: stateless, fresh-context
+iterations over a **csdd** SDD+TDD contract. Each activation has a FRESH context —
+everything you need is in files and the knowledge graph, not memory. This file is
+the durable, cross-cutting layer every activation inherits; per-task direction
+arrives in the iteration's prompt.
 
-## Workflow
-- Work one scoped behavior per iteration; everything you need is in files, not memory.
-- On a RED/GREEN pair follow strict TDD: write the failing test first, confirm it
-  fails for the expected reason, then the minimal code to make it pass; refactor green.
-- Stay strictly inside the declared component boundary; never edit outside it.
+## Workspace layout
+- ` + "`specs/<feat>/`" + ` — the csdd contract per feature: ` + "`requirements.md`" + ` (EARS),
+  ` + "`design.md`" + `, ` + "`tasks.md`" + ` (RED/GREEN TDD checklist), ` + "`spec.json`" + ` (state).
+  csdd is the authority: validate with ` + "`csdd spec validate <feat>`" + `.
+- ` + "`.ralph/`" + ` — ralph-loop runtime state (program tracker, progress log, graph.db,
+  MCP configs). Git-ignored; do not edit by hand.
+- ` + "`.claude/`" + ` — agents/skills and Claude config.
 
-## Knowledge graph (MCP server "graph")
-- BEFORE working, query it (search_facts / search_nodes / neighbors) to reuse what
-  is already known.
-- AFTER learning something durable, record it: add_episode for the raw source, then
-  add_fact (endpoints as kind+name, one sentence per fact). Supersede a contradicted
-  fact by passing its uuid in supersedes — never assume deletion.
+## SDD contract (per feature)
+- Author strictly in order: requirements → design → tasks; each phase is validated
+  and approved before the next. Requirements are EARS-form, with observable
+  acceptance criteria. Tasks are small RED/GREEN pairs, each tracing to requirement
+  IDs and carrying a component boundary from the design.
+- Scope every change to ONE feature; never leak work into a sibling feature's spec.
+
+## TDD workflow (per task)
+- On a RED/GREEN pair: write the failing test FIRST, run it, confirm it fails for
+  the EXPECTED reason (not a syntax/import error); then the minimal code to pass;
+  refactor under green. Keep the full suite green — no regressions.
+- Stay strictly inside the task's declared component boundary; never edit outside it.
+
+## Knowledge graph (MCP server "graph" — the project's living memory)
+- BEFORE working, query it (` + "`search_facts` / `search_nodes` / `neighbors`" + `) to reuse
+  what is already known instead of guessing.
+- AFTER learning something durable, record it: ` + "`add_episode`" + ` for the raw source,
+  then ` + "`add_fact`" + ` (endpoints as kind+name, one self-contained sentence per fact,
+  linked to the episode). If a fact contradicts an existing one, pass its uuid in
+  ` + "`supersedes`" + ` — history is temporal; never assume deletion.
 
 ## Commits
-- Conventional Commits (feat:, fix:, docs:, chore:, test:). One behavior per commit.
+- Conventional Commits (` + "`feat:`, `fix:`, `docs:`, `chore:`, `test:`" + `). One behavior per commit.
 - Commit ALL your changes; never leave the working tree dirty. Never commit on a red suite.
 - Do NOT push.
 `

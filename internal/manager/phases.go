@@ -23,24 +23,16 @@ import (
 
 // ---- ⓪ staff ----
 
+// rosterOutput is the staffing brain's pick of which csdd-library AGENTS the
+// pipeline needs — artifact paths to copy, e.g. "agents/e2e-qa".
 type rosterOutput struct {
-	Agents []struct {
-		Name        string   `json:"name"`
-		Description string   `json:"description"`
-		Tools       []string `json:"tools"`
-		Model       string   `json:"model"`
-		Effort      string   `json:"effort"`
-	} `json:"agents"`
-	Skills []struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	} `json:"skills"`
+	Agents []string `json:"agents"`
 }
 
-// phaseStaff decides the team roster from the challenge and materializes it via
-// the csdd factory (`csdd agent create` / `csdd skill create`) into .claude/.
-// Staffing reshapes how the brain thinks in later phases: specialists are
-// created with domain context baked into their descriptions.
+// phaseStaff assembles the team by COPYING only the agents the pipeline's flow
+// needs from csdd's curated library (`csdd copy agents/<name>`). ralph-loop does
+// NOT run `csdd init`, scaffold a default team, or author agents from scratch —
+// it pulls in exactly what is necessary. Skills are intentionally not staffed.
 func phaseStaff(ctx context.Context, o Options, p *program.PRD) error {
 	var roster rosterOutput
 	if err := brainJSON(ctx, o, staffPrompt(p.Challenge), &roster); err != nil {
@@ -49,55 +41,38 @@ func phaseStaff(ctx context.Context, o Options, p *program.PRD) error {
 	if len(roster.Agents) == 0 {
 		return fmt.Errorf("staffing returned no agents")
 	}
-	var created []string
-	for _, a := range roster.Agents {
-		name := program.Slug(a.Name)
-		args := []string{"agent", "create", name, "--description", a.Description}
-		if len(a.Tools) > 0 {
-			args = append(args, "--tools", strings.Join(a.Tools, ","))
+	var copied []string
+	for _, path := range roster.Agents {
+		path = strings.Trim(strings.TrimSpace(path), "/")
+		if path == "" {
+			continue
 		}
-		if a.Model != "" {
-			args = append(args, "--model", a.Model)
+		if res := o.Csdd.RunIn(ctx, o.Root, "copy", path); !res.OK {
+			return fmt.Errorf("csdd copy %s failed (exit %d):\n%s", path, res.ExitCode, res.Output)
 		}
-		if a.Effort != "" {
-			args = append(args, "--effort", a.Effort)
-		}
-		if res := o.Csdd.RunIn(ctx, o.Root, args...); !res.OK {
-			return fmt.Errorf("csdd agent create %s failed (exit %d):\n%s", name, res.ExitCode, res.Output)
-		}
-		created = append(created, "agent:"+name)
+		// The activatable agent name is the last path segment.
+		name := path[strings.LastIndex(path, "/")+1:]
 		p.Team = append(p.Team, name) // remembered so later phases can --agent it
+		copied = append(copied, path)
 	}
-	for _, s := range roster.Skills {
-		name := program.Slug(s.Name)
-		if res := o.Csdd.RunIn(ctx, o.Root, "skill", "create", name, "--description", s.Description); !res.OK {
-			return fmt.Errorf("csdd skill create %s failed (exit %d):\n%s", name, res.ExitCode, res.Output)
-		}
-		created = append(created, "skill:"+name)
-	}
-	return program.AppendProgress(o.Root, "team staffed", strings.Join(created, ", "))
+	return program.AppendProgress(o.Root, "team staffed", strings.Join(copied, ", "))
 }
 
 func staffPrompt(challenge string) string {
-	return fmt.Sprintf(`You are the staffer of an autonomous software-delivery pipeline. Decide the
-bespoke team of AI specialists for this challenge. They will be materialized as
-Claude Code sub-agents/skills and activated in later phases.
+	return fmt.Sprintf(`You are the staffer of an autonomous software-delivery pipeline. Choose the
+MINIMAL set of agents to COPY from csdd's curated library for this challenge —
+only what the pipeline's agent flow needs (research, spec authoring, review, and
+E2E acceptance), plus at most one domain specialist when the challenge demands it.
 
 CHALLENGE: %s
 
 Rules:
-- 2 to 5 agents, least-privilege tools each. Always include an "e2e-qa" agent
-  (acceptance judge; needs Bash + Playwright-style browser tools).
-- Include a domain specialist only when the challenge demands one.
-- Descriptions must bake in domain context: name the concrete frameworks,
-  engines or APIs the specialist should reach for, so it is precise, not generic.
-- tools: subset of [Read, Grep, Glob, Edit, Write, Bash, WebSearch, WebFetch].
-- model/effort: leave "" to inherit; raise effort only for judgment-heavy roles.
-- 0 to 3 skills: reusable procedures worth encoding (e.g. a scaffold recipe).
+- Return csdd library artifact PATHS to copy, each of the form "agents/<name>".
+- ALWAYS include an E2E acceptance agent (e.g. "agents/e2e-qa").
+- Reuse curated agents; copy the fewest that cover the flow. Do NOT copy skills.
 
 Respond with ONLY this JSON, no prose, no code fences:
-{"agents":[{"name":"<kebab>","description":"<1-3 sentences>","tools":["..."],"model":"","effort":""}],
- "skills":[{"name":"<kebab>","description":"<1-2 sentences>"}]}`, challenge)
+{"agents":["agents/<name>", ...]}`, challenge)
 }
 
 // ---- ① decompose ----
@@ -481,8 +456,8 @@ func printPlan(o Options, logf func(string, ...any)) error {
 	logf("  program: %s   branch: ralph/%s   state: .ralph/prd.json + .ralph/progress.md", slug, slug)
 	logf("")
 	logf("FRONT (once):")
-	logf("  ⓪ init       csdd init --exclude agents,skills (fresh workspace; CLAUDE.md fallback)")
-	logf("  ⓪ staff      brain → roster JSON → csdd agent/skill create (soft-fails)")
+	logf("  ⓪ init       ralph scaffolds .claude/ + CLAUDE.md (NOT csdd init)")
+	logf("  ⓪ staff      brain → agent library paths → csdd copy agents/<name> (soft-fails)")
 	logf("  ① decompose  brain → PRD + feats+deps → .ralph/prd.json → graph")
 	logf("")
 	logf("OUTER LOOP (per feat, dependency order):")

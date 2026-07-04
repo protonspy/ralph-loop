@@ -131,7 +131,7 @@ emit() { jq -n --arg r "$1" '{type:"result",is_error:false,result:$r}'; }
 
 case "$prompt" in
   *"You are the staffer"*)
-    emit '{"agents":[{"name":"e2e-qa","description":"acceptance judge","tools":["Bash"],"model":"","effort":""}],"skills":[]}' ;;
+    emit '{"agents":["agents/e2e-qa"]}' ;;
   *"product architect decomposing"*)
     emit '{"prd_summary":"one hello feat; rest out of scope","feats":[{"id":"hello-feat","title":"Say hello","depends":[]}]}' ;;
   *"You are the researcher"*)
@@ -187,7 +187,7 @@ while [ $# -gt 0 ]; do
 done
 cd "$rootdir"
 case "$sub" in
-  init*|"init") : ;;
+  copy*) : ;;
   "spec approve")
     if [ "$phase" = "tasks" ]; then
       spec="specs/$feat/spec.json"
@@ -195,7 +195,6 @@ case "$sub" in
       git add "$spec" && git commit -q --allow-empty -m "chore($feat): approve tasks"
     fi ;;
   "spec validate"|"spec status"|"spec init"|"spec generate") : ;;
-  "agent create"|"skill create") mkdir -p .claude/agents ;;
   *) echo "fake csdd: unknown command $*" >&2; exit 1 ;;
 esac
 `)

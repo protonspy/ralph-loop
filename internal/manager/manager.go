@@ -12,9 +12,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/protonspy/ralph-loop/internal/gate"
 	"github.com/protonspy/ralph-loop/internal/gitx"
@@ -29,7 +27,6 @@ type Options struct {
 	Challenge   string        // the natural-language challenge (empty ⇒ resume existing program)
 	Tool        tool.Runner   // AI tool for brain activations + inner loop
 	Csdd        gate.Resolver // how to invoke csdd (gate + factory)
-	CsddExclude string        // `csdd init --exclude` components (default "agents,skills"; ralph staffs its own)
 	Context7    string        // optional MCP command for Context7 docs (empty = disabled)
 	MaxIter  int // inner loop max iterations per feat
 	MaxRetry int // inner loop retries per unit
@@ -63,26 +60,9 @@ func Run(ctx context.Context, o Options) error {
 		logf("   ⚠ could not check out %s (commits will land on the current branch): %v", p.Branch, err)
 	}
 
-	// Scaffold the csdd workspace once (fresh workspaces only — CLAUDE.md is the
-	// marker, since `csdd init` now owns a consolidated CLAUDE.md and dropped
-	// csdd.md, per csdd PR #38). Exclude agents/skills: ralph-loop staffs its own
-	// bespoke team via the factory, so the default scaffold would be dead weight.
-	if _, err := os.Stat(filepath.Join(o.Root, "CLAUDE.md")); os.IsNotExist(err) {
-		initArgs := []string{"init"}
-		if x := strings.TrimSpace(o.CsddExclude); x != "" {
-			initArgs = append(initArgs, "--exclude", x)
-			logf("   scaffolding csdd workspace (exclude: %s) …", x)
-		} else {
-			logf("   scaffolding csdd workspace …")
-		}
-		if res := o.Csdd.RunIn(ctx, o.Root, initArgs...); !res.OK {
-			logf("   ⚠ csdd init failed (continuing): %s", strings.TrimSpace(res.Output))
-		}
-		// Fallback convention layer if csdd init did not create CLAUDE.md.
-		if err := program.EnsureCLAUDEMD(o.Root); err != nil {
-			return err
-		}
-	}
+	// Note: ralph-loop does NOT run `csdd init`. The workspace is scaffolded by
+	// program.Bootstrap (a .claude/ anchor + a self-contained CLAUDE.md); the team
+	// itself is pulled in via `csdd copy` during staffing below.
 
 	// Front of the pipeline: staff a team, then decompose the PRD into feats.
 	if len(p.Feats) == 0 {
